@@ -13,17 +13,14 @@ use Dbout\WpRestApi\Attributes\Route;
 use Dbout\WpRestApi\Enums\Method;
 use Dbout\WpRestApi\Route as RestRoute;
 use Dbout\WpRestApi\RouteAction;
-use Symfony\Component\Config\Loader\LoaderInterface;
-use Symfony\Component\Config\Loader\LoaderResolverInterface;
 
-class AnnotatedRouteRestLoader implements LoaderInterface
+class AnnotatedRouteRestLoader
 {
     /**
      * @param $resource
-     * @param string|null $type
-     * @return ?RestRoute
+     * @return RestRoute|null
      */
-    public function load($resource, string $type = null): ?RestRoute
+    public function load($resource): ?RestRoute
     {
         if (!class_exists($resource)) {
             throw new \InvalidArgumentException(sprintf('Class "%s" does not exist.', $resource));
@@ -103,27 +100,5 @@ class AnnotatedRouteRestLoader implements LoaderInterface
             $methods,
             $action->permissionCallback ?? $route->permissionCallback
         );
-    }
-
-    /**
-     * @inheritDoc
-     */
-    public function supports($resource, string $type = null): bool
-    {
-        return \is_string($resource) && preg_match('/^(?:\\\\?[a-zA-Z_\x7f-\xff][a-zA-Z0-9_\x7f-\xff]*)+$/', $resource);
-    }
-
-    /**
-     * @inheritDoc
-     */
-    public function setResolver(LoaderResolverInterface $resolver)
-    {
-    }
-
-    /**
-     * @inheritDoc
-     */
-    public function getResolver()
-    {
     }
 }
