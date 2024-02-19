@@ -13,6 +13,8 @@ use Dbout\WpRestApi\Exceptions\PermissionException;
 interface PermissionInterface
 {
     /**
+     * This is a function that checks if the user can perform the action.
+     *
      * @param \WP_REST_Request $request
      * @throws PermissionException
      * @throws \Exception
