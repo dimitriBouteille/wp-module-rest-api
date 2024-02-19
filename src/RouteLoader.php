@@ -9,22 +9,17 @@
 namespace Dbout\WpRestApi;
 
 use Dbout\WpRestApi\Exceptions\ApiException;
+use Dbout\WpRestApi\Helpers\FileLocator;
 use Dbout\WpRestApi\Loader\AnnotationDirectoryLoader;
 use Dbout\WpRestApi\Wrappers\PermissionWrapper;
 use Dbout\WpRestApi\Wrappers\RestWrapper;
+use Psr\Cache\CacheItemPoolInterface;
 use Psr\Cache\InvalidArgumentException;
-use Symfony\Component\Cache\Adapter\FilesystemAdapter;
-use Symfony\Component\Config\FileLocator;
 use Symfony\Component\Finder\Finder;
 
 class RouteLoader
 {
     final public const CACHE_KEY = 'wp_autoloader_routes';
-
-    /**
-     * @var FilesystemAdapter|null
-     */
-    protected ?FilesystemAdapter $cache = null;
 
     /**
      * @param string $rootDirectory
@@ -34,11 +29,6 @@ class RouteLoader
         protected string $rootDirectory,
         protected ?RouteLoaderOptions $options = null,
     ) {
-        if ($this->options->cache !== false) {
-            $this->cache = new FilesystemAdapter(
-                directory: $this->options->cache
-            );
-        }
     }
 
     /**
@@ -47,19 +37,23 @@ class RouteLoader
      */
     protected function getRoutes(): array
     {
-        if ($this->cache instanceof FilesystemAdapter) {
-            $routes = $this->cache->get(self::CACHE_KEY, function () {
-                $routes = $this->findRoutes();
-                return serialize($routes);
-            });
+        $cache = $this->options?->cache;
+        if (!$cache instanceof CacheItemPoolInterface) {
+            return $this->findRoutes();
+        }
 
+        $cacheRoutes = $cache->getItem(self::CACHE_KEY);
+        if ($cacheRoutes->isHit()) {
             try {
-                return unserialize($routes);
+                return unserialize($cacheRoutes->get());
             } catch (\Exception) {
             }
         }
 
-        return $this->findRoutes();
+        $routes = $this->findRoutes();
+        $cacheRoutes->set(serialize($routes));
+        $cache->save($cacheRoutes);
+        return $routes;
     }
 
     /**
@@ -78,8 +72,12 @@ class RouteLoader
             }
 
             $path = $directory->getRealPath();
+            if (!is_string($path)) {
+                continue;
+            }
+
             $loader = new AnnotationDirectoryLoader(
-                new FileLocator($path)
+                new FileLocator([$path])
             );
 
             $routes = array_merge($routes, $loader->load($path));

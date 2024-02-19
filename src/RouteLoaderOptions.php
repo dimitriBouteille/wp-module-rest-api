@@ -8,14 +8,15 @@
 
 namespace Dbout\WpRestApi;
 
+use Psr\Cache\CacheItemPoolInterface;
+
 class RouteLoaderOptions
 {
     /**
-     * @param string|bool $cache    Set this option to false for disable the cache or the path to the cache folder
-     *                              if you want to have cache on the routes search
+     * @param CacheItemPoolInterface|null $cache
      */
     public function __construct(
-        public string|bool $cache = false,
+        public ?CacheItemPoolInterface $cache = null,
     ) {
     }
 }

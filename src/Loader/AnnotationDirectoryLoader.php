@@ -8,35 +8,30 @@
 
 namespace Dbout\WpRestApi\Loader;
 
+use Dbout\WpRestApi\Helpers\FileLocator;
+use Dbout\WpRestApi\Helpers\FileLocatorInterface;
 use Dbout\WpRestApi\Route;
-use Symfony\Component\Config\FileLocatorInterface;
-use Symfony\Component\Config\Loader\FileLoader;
 use Symfony\Component\Config\Loader\LoaderInterface;
 
-/**
- * @see \Symfony\Component\Routing\Loader\AnnotationDirectoryLoader
- * @see \Symfony\Component\Routing\Loader\AnnotationClassLoader
- */
-class AnnotationDirectoryLoader extends FileLoader
+class AnnotationDirectoryLoader
 {
     /**
-     * @param FileLocatorInterface $locator
+     * @param FileLocator $locator
      * @param LoaderInterface $annotationClassLoader
      */
     public function __construct(
-        FileLocatorInterface $locator,
+        protected FileLocatorInterface $locator,
         protected LoaderInterface $annotationClassLoader = new AnnotatedRouteRestLoader()
     ) {
-        parent::__construct(
-            $locator
-        );
     }
 
     /**
+     * @param string $resource
+     * @throws \Dbout\WpRestApi\Exceptions\ApiException
+     * @throws \ReflectionException
      * @return array<Route>
-     * @inheritDoc
      */
-    public function load($resource, string $type = null): array
+    public function load(string $resource): array
     {
         if (!is_dir($dir = $this->locator->locate($resource))) {
             return [];
@@ -81,14 +76,6 @@ class AnnotationDirectoryLoader extends FileLoader
         }
 
         return $routes;
-    }
-
-    /**
-     * @inheritDoc
-     */
-    public function supports($resource, string $type = null): bool
-    {
-        return \is_string($resource) && 'php' === pathinfo($resource, \PATHINFO_EXTENSION);
     }
 
     /**
