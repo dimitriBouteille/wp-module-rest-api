@@ -70,6 +70,10 @@ class RestWrapper
         $dependencies = [];
         foreach ($method->getParameters() as $parameter) {
             $type = $parameter->getType();
+            if (!$type instanceof \ReflectionNamedType) {
+                continue;
+            }
+
             if ($type->getName() === get_class($request)) {
                 $dependencies[$parameter->getPosition()] = $request;
                 continue;

@@ -2,7 +2,7 @@
 
 ![GitHub Release](https://img.shields.io/github/v/release/dimitriBouteille/wp-module-rest-api) [![tests](https://img.shields.io/github/actions/workflow/status/dimitriBouteille/wp-orm/tests.yml?label=tests)](https://github.com/dimitriBouteille/wp-module-rest-api/actions/workflows/tests.yml)
 
-WordPress module designed for developers that allows you to add routes to the [WordPress Rest API](https://developer.wordpress.org/rest-api/) in a few moments.
+WordPress module designed for developers that want to add routes to the [WordPress Rest API](https://developer.wordpress.org/rest-api/) in a few moments.
 
 > 💡 To simplify the integration of this library, we recommend using WordPress with one of the following tools: [Bedrock](https://roots.io/bedrock/), [Themosis](https://framework.themosis.com/) or [Wordplate](https://github.com/wordplate/wordplate#readme).
 
@@ -30,6 +30,10 @@ require __DIR__ . '/vendor/autoload.php';
 ~~~
 
 **Installation with standard WordPress project**
+
+## Usage
+
+
 
 ## Contributing
 
