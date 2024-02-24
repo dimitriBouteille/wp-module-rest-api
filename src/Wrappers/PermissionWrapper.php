@@ -8,6 +8,7 @@
 
 namespace Dbout\WpRestApi\Wrappers;
 
+use Dbout\WpRestApi\Exceptions\ApiException;
 use Dbout\WpRestApi\Exceptions\PermissionException;
 use Dbout\WpRestApi\Permissions\PermissionInterface;
 use Dbout\WpRestApi\RouteAction;
@@ -42,9 +43,11 @@ class PermissionWrapper
                 return $instance->allow($request);
             }
 
-            /**
-             * @todo Add some logic here
-             */
+            if (is_callable($permissionCallback)) {
+                return call_user_func($permissionCallback, $request);
+            }
+
+            throw new ApiException('Invalid permissionCallback argument.');
         } catch (PermissionException $exception) {
             return new \WP_Error(
                 'rest_forbidden',
@@ -52,7 +55,5 @@ class PermissionWrapper
                 ['status' => rest_authorization_required_code()]
             );
         }
-
-        return false;
     }
 }

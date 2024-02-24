@@ -42,7 +42,7 @@ require __DIR__ . '/vendor/autoload.php';
 
 ## Usage
 
-Before creating your first route, you must initialize the module. It is advisable to add this piece of code at the beginning of the `functions.php` file of your theme or in a `mu-plugin`.
+Before creating your first route, you must initialize the module. It is advisable to add this code at the beginning of the `functions.php` file of your theme or in a `mu-plugin`.
 
 ```php
 use Dbout\WpRestApi\RouteLoader;
