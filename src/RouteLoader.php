@@ -10,23 +10,22 @@ namespace Dbout\WpRestApi;
 
 use Dbout\WpRestApi\Exceptions\ApiException;
 use Dbout\WpRestApi\Helpers\FileLocator;
-use Dbout\WpRestApi\Loader\AnnotationDirectoryLoader;
+use Dbout\WpRestApi\Loaders\AnnotationDirectoryLoader;
 use Dbout\WpRestApi\Wrappers\PermissionWrapper;
 use Dbout\WpRestApi\Wrappers\RestWrapper;
 use Psr\Cache\CacheItemPoolInterface;
 use Psr\Cache\InvalidArgumentException;
-use Symfony\Component\Finder\Finder;
 
 class RouteLoader
 {
     final public const CACHE_KEY = 'wp_autoloader_routes';
 
     /**
-     * @param string $rootDirectory
+     * @param string|array<string> $routeDirectory
      * @param RouteLoaderOptions|null $options
      */
     public function __construct(
-        protected string $rootDirectory,
+        protected string|array $routeDirectory,
         protected ?RouteLoaderOptions $options = null,
     ) {
     }
@@ -42,7 +41,8 @@ class RouteLoader
             return $this->findRoutes();
         }
 
-        $cacheRoutes = $cache->getItem(self::CACHE_KEY);
+        $cacheKey = $this->options->cacheKey ?? self::CACHE_KEY;
+        $cacheRoutes = $cache->getItem($cacheKey);
         if ($cacheRoutes->isHit()) {
             try {
                 return unserialize($cacheRoutes->get());
@@ -62,13 +62,16 @@ class RouteLoader
      */
     protected function findRoutes(): array
     {
-        $finder = new Finder();
-        $directories = $finder->ignoreUnreadableDirs()->in($this->rootDirectory);
+        $directories = is_array($this->routeDirectory) ? $this->routeDirectory : [$this->routeDirectory];
         $routes = [];
 
-        foreach ($directories->depth(1) as $directory) {
-            if (!$directory instanceof \SplFileInfo) {
-                continue;
+        foreach ($directories as $directory) {
+            $directory = new \SplFileInfo($directory);
+            if (!$directory->isDir()) {
+                throw new ApiException(sprintf(
+                    'The path %s is not a valid folder.',
+                    $directory
+                ));
             }
 
             $path = $directory->getRealPath();
@@ -135,7 +138,7 @@ class RouteLoader
 
     /**
      * @param Route $route
-     * @return array
+     * @return array<array<string, mixed>>
      */
     protected function buildRouteArgs(Route $route): array
     {

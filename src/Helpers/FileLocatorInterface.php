@@ -21,7 +21,7 @@ interface FileLocatorInterface
      *
      * @throws \InvalidArgumentException        If $name is empty
      * @throws ApiException If a file is not found
-     * @return string|array The full path to the file or an array of file paths
+     * @return string|array<string> The full path to the file or an array of file paths
      *
      */
     public function locate(string $name, string $currentPath = null, bool $first = true): array|string;

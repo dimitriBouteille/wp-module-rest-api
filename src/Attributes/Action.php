@@ -18,7 +18,7 @@ use Dbout\WpRestApi\Enums\Method;
 class Action
 {
     /**
-     * @param Method|array $methods
+     * @param Method|array<Method> $methods
      * @param mixed|null $permissionCallback This is a function that checks if the user can perform the action (reading, updating, etc.) before the real callback is called.
      */
     public function __construct(

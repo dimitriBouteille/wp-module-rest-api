@@ -64,6 +64,16 @@ public function get(int $documentId): \WP_REST_Response
 }
 ```
 
+```json
+{
+    "error": {
+        "code": "not-found",
+        "message": "Document not found.",
+        "data": null
+    }
+}
+```
+
 ### 500 error
 
 If you want to return a 500 error, just use `\Exception`. By default, 500 error messages are never returned, a generic message is returned instead:

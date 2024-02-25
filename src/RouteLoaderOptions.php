@@ -14,9 +14,11 @@ class RouteLoaderOptions
 {
     /**
      * @param CacheItemPoolInterface|null $cache
+     * @param string|null $cacheKey
      */
     public function __construct(
         public ?CacheItemPoolInterface $cache = null,
+        public ?string $cacheKey = null,
     ) {
     }
 }

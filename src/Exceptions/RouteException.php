@@ -14,7 +14,7 @@ class RouteException extends \Exception
      * @param string $message
      * @param string|null $errorCode
      * @param int $httpStatusCode
-     * @param array $additionalData
+     * @param array<string, mixed> $additionalData
      */
     public function __construct(
         string $message,
@@ -37,7 +37,7 @@ class RouteException extends \Exception
     }
 
     /**
-     * @return array
+     * @return array<string, mixed>
      */
     public function getAdditionalData(): array
     {

@@ -12,8 +12,8 @@ If you want to know more about how the WordPress API works, you can [read the Wo
 
 - [Installation](#installation)
 - [Basic usage](#usage)
-- [Error handling](/docs/error-handling.md)
-- [Permission](/docs/permission.md)
+- [Error handling](/doc/error-handling.md)
+- [Permission](/doc/permission.md)
 
 ## Installation
 
@@ -92,10 +92,21 @@ class Document
 
 You just created 2 routes 🎉
 
-- `GET` => `GET:wp-json/app/v2/document/18`
-- `DELETE` => `DELETE:wp-json/app/v2/document/18`
+- `GET:wp-json/app/v2/document/18`
+- `DELETE:wp-json/app/v2/document/18`
 
 The logic is extremely simple, you can use the following methods: `GET`, `POST`, `PUT`, `PATCH` and `DELETE`
+
+If you need, you can define multiple methods for an action by passing a method array :
+
+```php
+#[Action([Method::GET, Method::POST, Method::PUT])]
+public function execute(\WP_REST_Request $request): \WP_REST_Response
+{
+    // Add your logic 
+
+}
+```
 
 ### Callback arguments
 
