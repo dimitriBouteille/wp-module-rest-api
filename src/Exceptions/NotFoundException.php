@@ -12,7 +12,7 @@ class NotFoundException extends RouteException
 {
     /**
      * @param string|null $objectType
-     * @param array $additionalData
+     * @param array<string, mixed> $additionalData
      */
     public function __construct(
         string $objectType = null,

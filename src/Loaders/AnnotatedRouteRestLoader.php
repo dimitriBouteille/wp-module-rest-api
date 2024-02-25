@@ -6,7 +6,7 @@
  * Author: Dimitri BOUTEILLE <bonjour@dimitri-bouteille.fr>
  */
 
-namespace Dbout\WpRestApi\Loader;
+namespace Dbout\WpRestApi\Loaders;
 
 use Dbout\WpRestApi\Attributes\Action;
 use Dbout\WpRestApi\Attributes\Route;
@@ -14,11 +14,10 @@ use Dbout\WpRestApi\Enums\Method;
 use Dbout\WpRestApi\Route as RestRoute;
 use Dbout\WpRestApi\RouteAction;
 
-class AnnotatedRouteRestLoader
+class AnnotatedRouteRestLoader implements InterfaceLoader
 {
     /**
-     * @param $resource
-     * @return RestRoute|null
+     * @inheritDoc
      */
     public function load($resource): ?RestRoute
     {
@@ -60,7 +59,7 @@ class AnnotatedRouteRestLoader
 
     /**
      * @param Route $route
-     * @param array $actions
+     * @param array<RouteAction> $actions
      * @return RestRoute
      */
     protected function createRoute(Route $route, array $actions): RestRoute
@@ -90,7 +89,7 @@ class AnnotatedRouteRestLoader
             $methods[] = $action->methods->value;
         } elseif (is_array($action->methods)) {
             foreach ($action->methods as $m) {
-                $methods[] = $m instanceof Method ? $m->value : $m;
+                $methods[] = $m->value;
             }
         }
 

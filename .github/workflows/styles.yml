@@ -10,7 +10,7 @@ jobs:
 
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Configure PHP
         uses: shivammathur/setup-php@v2
@@ -23,6 +23,9 @@ jobs:
 
       - name: PHPCsFixer
         run: composer csFixer
+
+      - name: Rector
+        run: composer rector
 
       - name: PHPStan Analyse
         run: composer phpstan

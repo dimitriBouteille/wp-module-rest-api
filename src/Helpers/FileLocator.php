@@ -13,7 +13,7 @@ use Dbout\WpRestApi\Exceptions\ApiException;
 class FileLocator implements FileLocatorInterface
 {
     /**
-     * @param string|string[] $paths A path or an array of paths where to look for resources
+     * @param array<string> $paths Array of paths where to look for resources
      */
     public function __construct(
         protected array $paths = []
@@ -57,7 +57,7 @@ class FileLocator implements FileLocatorInterface
             }
         }
 
-        if (!$filepaths) {
+        if ($filepaths === []) {
             throw new ApiException(sprintf('The file "%s" does not exist (in: "%s").', $name, implode('", "', $paths)));
         }
 

@@ -6,37 +6,35 @@
  * Author: Dimitri BOUTEILLE <bonjour@dimitri-bouteille.fr>
  */
 
-namespace Dbout\WpRestApi\Loader;
+namespace Dbout\WpRestApi\Loaders;
 
-use Dbout\WpRestApi\Helpers\FileLocator;
 use Dbout\WpRestApi\Helpers\FileLocatorInterface;
 use Dbout\WpRestApi\Route;
-use Symfony\Component\Config\Loader\LoaderInterface;
 
-class AnnotationDirectoryLoader
+class AnnotationDirectoryLoader implements InterfaceLoader
 {
     /**
-     * @param FileLocator $locator
-     * @param LoaderInterface $annotationClassLoader
+     * @param FileLocatorInterface $locator
+     * @param InterfaceLoader $annotationClassLoader
      */
     public function __construct(
         protected FileLocatorInterface $locator,
-        protected LoaderInterface $annotationClassLoader = new AnnotatedRouteRestLoader()
+        protected InterfaceLoader $annotationClassLoader = new AnnotatedRouteRestLoader()
     ) {
     }
 
     /**
-     * @param string $resource
-     * @throws \Dbout\WpRestApi\Exceptions\ApiException
-     * @throws \ReflectionException
+     * @inheritDoc
      * @return array<Route>
      */
-    public function load(string $resource): array
+    public function load(mixed $resource): array
     {
-        if (!is_dir($dir = $this->locator->locate($resource))) {
+        $dir = $this->locator->locate($resource);
+        if (is_array($dir) || !is_dir($dir)) {
             return [];
         }
 
+        /** @var \SplFileInfo[] $files */
         $files = iterator_to_array(new \RecursiveIteratorIterator(
             new \RecursiveCallbackFilterIterator(
                 new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS | \FilesystemIterator::FOLLOW_SYMLINKS),
@@ -57,6 +55,7 @@ class AnnotationDirectoryLoader
                 continue;
             }
 
+            /** @var class-string|null $class */
             $class = $this->findClass($file);
             if ($class === null) {
                 continue;
@@ -86,8 +85,12 @@ class AnnotationDirectoryLoader
     {
         $class = false;
         $namespace = false;
-        $tokens = token_get_all(file_get_contents($file));
+        $fileContent = file_get_contents($file);
+        if ($fileContent === false) {
+            return null;
+        }
 
+        $tokens = token_get_all($fileContent);
         if (1 === \count($tokens) && \T_INLINE_HTML === $tokens[0][0]) {
             throw new \InvalidArgumentException(sprintf('The file "%s" does not contain PHP code. Did you forgot to add the "<?php" start tag at the beginning of the file?', $file));
         }

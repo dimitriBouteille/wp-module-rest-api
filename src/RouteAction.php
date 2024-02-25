@@ -13,7 +13,7 @@ class RouteAction
     /**
      * @param mixed $className
      * @param string $methodName
-     * @param array $methods
+     * @param array<string> $methods
      * @param mixed $permissionCallback
      */
     public function __construct(

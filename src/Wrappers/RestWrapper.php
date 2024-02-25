@@ -63,7 +63,7 @@ class RestWrapper
     /**
      * @param \ReflectionMethod $method
      * @param \WP_REST_Request $request
-     * @return array
+     * @return array<int, mixed>
      */
     protected function collectDependencies(\ReflectionMethod $method, \WP_REST_Request $request): array
     {
