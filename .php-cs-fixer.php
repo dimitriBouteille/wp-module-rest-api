@@ -1,6 +1,6 @@
 <?php
 /**
- * Copyright (c) 2023 Dimitri BOUTEILLE
+ * Copyright (c) Dimitri BOUTEILLE (https://github.com/dimitriBouteille)
  * See LICENSE.txt for license details.
  *
  * Author: Dimitri BOUTEILLE <bonjour@dimitri-bouteille.fr>
@@ -17,7 +17,7 @@ $finder = \PhpCsFixer\Finder::create()
 ;
 
 $header = <<<EOF
-    Copyright (c) 2024 Dimitri BOUTEILLE (https://github.com/dimitriBouteille)
+    Copyright (c) Dimitri BOUTEILLE (https://github.com/dimitriBouteille)
     See LICENSE.txt for license details.
 
     Author: Dimitri BOUTEILLE <bonjour@dimitri-bouteille.fr>
