@@ -6,7 +6,7 @@
  * Author: Dimitri BOUTEILLE <bonjour@dimitri-bouteille.fr>
  */
 
-namespace Dbout\WpRestApi\Tests\Unit\Wrappers;
+namespace Dbout\WpRestApi\Tests\Wrappers;
 
 use Dbout\WpRestApi\RouteAction;
 use Dbout\WpRestApi\Wrappers\PermissionWrapper;

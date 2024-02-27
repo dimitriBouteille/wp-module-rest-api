@@ -28,6 +28,11 @@
       "Dbout\\WpRestApi\\": "src/"
     }
   },
+  "autoload-dev": {
+    "psr-4": {
+      "Dbout\\WpRestApi\\Tests\\": "tests/"
+    }
+  },
   "require-dev": {
     "friendsofphp/php-cs-fixer": "^3.28",
     "phpstan/phpstan": "^1.10",

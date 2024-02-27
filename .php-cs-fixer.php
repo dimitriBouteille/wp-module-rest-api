@@ -11,6 +11,9 @@ $finder = \PhpCsFixer\Finder::create()
     ->in([
         'src',
     ])
+    ->exclude([
+        __DIR__ . '/tests/fixtures',
+    ])
 ;
 
 $header = <<<EOF

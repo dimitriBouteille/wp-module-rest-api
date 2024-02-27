@@ -6,15 +6,15 @@
  * Author: Dimitri BOUTEILLE <bonjour@dimitri-bouteille.fr>
  */
 
-define('ABSPATH', __DIR__ . '/web/wordpress/');
-$includeDirectory  = __DIR__ . '/web/wordpress/wp-includes';
+define('ABSPATH', __DIR__ . '/../web/wordpress/');
+$includeDirectory  = __DIR__ . '/../web/wordpress/wp-includes';
 
 $paths = [
     '/class-wp-http-response.php',
     '/rest-api.php',
     '/rest-api/class-wp-rest-server.php',
     '/rest-api/class-wp-rest-response.php',
-    '/rest-api/class-wp-rest-request.php'
+    '/rest-api/class-wp-rest-request.php',
 ];
 
 foreach ($paths as $path) {
