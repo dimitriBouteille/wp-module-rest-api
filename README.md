@@ -14,7 +14,7 @@ If you want to know more about how the WordPress API works, you can [read the Wo
 - [Basic usage](#usage)
 - [Error handling](/doc/error-handling.md)
 - [Permission](/doc/permission.md)
-- [Route Loader Options](doc/options.md)
+- [Route loader options](doc/options.md)
 
 ## Installation
 

@@ -11,11 +11,7 @@ The [RouteLoader](../src/RouteLoader.php) takes 2 arguments:
 use Dbout\WpRestApi\RouteLoader;
 use Dbout\WpRestApi\RouteLoaderOptions;
 
-$options =  new RouteLoaderOptions(
-    cache: '...',
-    cacheKey: '...'
-)
-
+$options =  new RouteLoaderOptions(...);
 $loader = new RouteLoader(
     __DIR__ . '/src/Api/Routes',
     $options
