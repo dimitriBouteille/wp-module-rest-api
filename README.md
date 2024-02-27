@@ -14,6 +14,7 @@ If you want to know more about how the WordPress API works, you can [read the Wo
 - [Basic usage](#usage)
 - [Error handling](/doc/error-handling.md)
 - [Permission](/doc/permission.md)
+- [Route Loader Options](doc/options.md)
 
 ## Installation
 
@@ -38,8 +39,6 @@ In your PHP script, make sure you include the autoloader:
 require __DIR__ . '/vendor/autoload.php';
 ~~~
 
-### Installation with standard WordPress project
-
 ## Usage
 
 Before creating your first route, you must initialize the module. It is advisable to add this code at the beginning of the `functions.php` file of your theme or in a `mu-plugin`.
@@ -47,11 +46,22 @@ Before creating your first route, you must initialize the module. It is advisabl
 ```php
 use Dbout\WpRestApi\RouteLoader;
 
-$loader = new RouteLoader('YOUR_ROUTES_DIRECTORY');
+// One folder
+$loader = new RouteLoader(__DIR__ . '/src/Api/Routes');
 $loader->register();
+
+// Multiple folders
+$loader = new RouteLoader([
+    __DIR__ . '/themes/my-theme/api'
+    __DIR__ . '/src/Api/Routes',
+]);
 ```
 
-Now you have initialized the module, you just need to create your first route in the `YOUR_ROUTES_DIRECTORY` folder.
+> 💡 The module will automatically search for all classes that are in the folder and sub folder.
+
+> 💡 You can pass as the second argument of RouteLoader an option object: [read the documentation](doc/options.md).
+
+Now you have initialized the module, you just need to create your first route in the routes folder.
 
 ```php
 <?php

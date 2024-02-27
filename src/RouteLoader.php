@@ -1,6 +1,6 @@
 <?php
 /**
- * Copyright (c) 2024 Dimitri BOUTEILLE (https://github.com/dimitriBouteille)
+ * Copyright (c) Dimitri BOUTEILLE (https://github.com/dimitriBouteille)
  * See LICENSE.txt for license details.
  *
  * Author: Dimitri BOUTEILLE <bonjour@dimitri-bouteille.fr>
@@ -18,8 +18,6 @@ use Psr\Cache\InvalidArgumentException;
 
 class RouteLoader
 {
-    final public const CACHE_KEY = 'wp_autoloader_routes';
-
     /**
      * @param string|array<string> $routeDirectory
      * @param RouteLoaderOptions|null $options
@@ -41,7 +39,7 @@ class RouteLoader
             return $this->findRoutes();
         }
 
-        $cacheKey = $this->options->cacheKey ?? self::CACHE_KEY;
+        $cacheKey = $this->options->cacheKey;
         $cacheRoutes = $cache->getItem($cacheKey);
         if ($cacheRoutes->isHit()) {
             try {
