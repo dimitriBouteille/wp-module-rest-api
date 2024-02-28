@@ -7,7 +7,7 @@
 3. Make the desired changes to the code.
     * If you are adding new functionality or fixing a bug, we recommend you add unit tests that cover it.
 4. Push the changes to your fork.
-5. Create a pull request to the `dbout/wp-orm` repository.
+5. Create a pull request to the `dbout/wp-module-rest-api` repository.
 6. In your pull request, please describe in detail:
     * What problem you’re solving
     * Your approach to fixing the problem

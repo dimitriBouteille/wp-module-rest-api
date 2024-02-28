@@ -34,24 +34,6 @@ class PermissionWrapperTest extends TestCase
     }
 
     /**
-     * @return void
-     * @covers ::execute
-     */
-    public function testWithPermissionInterface(): void
-    {
-
-    }
-
-    /**
-     * @return void
-     * @covers ::execute
-     */
-    public function testThrowPermissionException(): void
-    {
-
-    }
-
-    /**
      * @param RouteAction $action
      * @return PermissionWrapper
      */

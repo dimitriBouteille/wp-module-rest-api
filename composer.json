@@ -11,7 +11,7 @@
       "role": "Developer"
     }
   ],
-  "keywords": ["wordpress", "wp", "wordpress-starter", "api", "rest", "rest-api", "wordpress-rest-api"],
+  "keywords": ["wordpress", "wp", "wordpress-starter", "api", "rest", "rest-api", "wordpress-rest-api", "wordpress-development"],
   "homepage": "https://github.com/dimitriBouteille/wp-module-rest-api",
   "support": {
     "issues": "https://github.com/dimitriBouteille/wp-module-rest-api/issues",
