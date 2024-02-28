@@ -23,7 +23,7 @@ If you want to know more about how the WordPress API works, you can [read the Wo
 The server requirements are basically the same as for [WordPress](https://wordpress.org/about/requirements/) with the addition of a few ones :
 
 - PHP >= 8.1
-- [Composer](https://getcomposer.org/) (optional)
+- [Composer](https://getcomposer.org/)
 
 ### Installation with composer
 
