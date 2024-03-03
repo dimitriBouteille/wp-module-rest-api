@@ -123,7 +123,7 @@ class RouteLoader
     public function register(): void
     {
         $routes = $this->getRoutes();
-        add_action('rest_api_init', function () use ($routes) {
+        add_action('rest_api_init', function () use ($routes): void {
             foreach ($routes as $route) {
                 register_rest_route(
                     $route->namespace,
