@@ -39,14 +39,14 @@ class AnnotationDirectoryLoader implements InterfaceLoader
         $files = iterator_to_array(new \RecursiveIteratorIterator(
             new \RecursiveCallbackFilterIterator(
                 new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS | \FilesystemIterator::FOLLOW_SYMLINKS),
-                function (\SplFileInfo $current) {
+                function (\SplFileInfo $current): bool {
                     return !str_starts_with($current->getBasename(), '.');
                 }
             ),
             \RecursiveIteratorIterator::LEAVES_ONLY
         ));
 
-        usort($files, function (\SplFileInfo $a, \SplFileInfo $b) {
+        usort($files, function (\SplFileInfo $a, \SplFileInfo $b): int {
             return (string) $a > (string) $b ? 1 : -1;
         });
 
