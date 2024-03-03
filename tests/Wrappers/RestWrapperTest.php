@@ -10,6 +10,7 @@ namespace Dbout\WpRestApi\Tests\Wrappers;
 
 use Dbout\WpRestApi\RouteAction;
 use Dbout\WpRestApi\Tests\fixtures\RouteWithException;
+use Dbout\WpRestApi\Tests\fixtures\RouteWithNotFoundException;
 use Dbout\WpRestApi\Tests\fixtures\RouteWithRouteException;
 use Dbout\WpRestApi\Wrappers\RestWrapper;
 use PHPUnit\Framework\TestCase;
@@ -79,6 +80,25 @@ class RestWrapperTest extends TestCase
             'My route exception.',
             400,
         ];
+    }
+
+    /**
+     * @return void
+     * @covers ::execute
+     */
+    public function testNotFoundException(): void
+    {
+        $action = new RouteAction(
+            RouteWithNotFoundException::class,
+            'execute',
+            ['GET'],
+            null
+        );
+
+        $wrapper = new RestWrapper($action);
+
+        $response = $wrapper->execute(new \WP_REST_Request());
+        $this->exceptionAsserts($response, 'Object not found.', 404);
     }
 
     /**

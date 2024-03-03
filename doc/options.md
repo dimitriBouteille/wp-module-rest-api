@@ -6,8 +6,6 @@ The [RouteLoader](../src/RouteLoader.php) takes 2 arguments:
 - A [RouteLoaderOptions](../src/RouteLoaderOptions.php) object that contains options
 
 ```php
-<?php
-
 use Dbout\WpRestApi\RouteLoader;
 use Dbout\WpRestApi\RouteLoaderOptions;
 
@@ -55,4 +53,28 @@ $options = new RouteLoaderOptions(
     cache: $cache,
     cacheKey: 'my_cache_key'
 );
+```
+
+## Debug
+
+In development mode, it may be interesting to enable debug mode so that errors (500) are visible. When mode is enabled, the full exception is returned in the response.
+
+```php
+use Dbout\WpRestApi\RouteLoaderOptions;
+
+$options = new RouteLoaderOptions(
+    debug: true,
+);
+```
+
+```json
+{
+  "error": {
+    "code": "fatal-error",
+    "message": "The exception message.",
+    "data": {
+      "exception": "The exception full trace"
+    }
+  }
+}
 ```

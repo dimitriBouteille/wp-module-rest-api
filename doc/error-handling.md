@@ -88,6 +88,8 @@ If you want to return a 500 error, just use `\Exception`. By default, 500 error 
 }
 ```
 
+> 💡 You can enable [debug](../doc/options.md#debug) mode to return the exception in the response.
+
 ### Custom error
 
 You can return a custom error using the exception `\Dbout\WpRestApi\Exceptions\RouteException` :
