@@ -17,10 +17,12 @@ class RouteLoaderOptions
     /**
      * @param CacheItemPoolInterface|null $cache
      * @param string $cacheKey
+     * @param bool $debug
      */
     public function __construct(
         public ?CacheItemPoolInterface $cache = null,
         public string $cacheKey = self::DEFAULT_CACHE_KEY,
+        public bool $debug = false,
     ) {
     }
 }
