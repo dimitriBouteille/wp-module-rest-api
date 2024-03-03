@@ -18,9 +18,11 @@ class RestWrapper
 
     /**
      * @param RouteAction $action
+     * @param bool $debug
      */
     public function __construct(
         protected RouteAction $action,
+        protected bool $debug = false,
     ) {
     }
 
@@ -36,18 +38,7 @@ class RestWrapper
             $dependencies = $this->collectDependencies($method, $request);
             $response = $method->invoke($classRef->newInstance(), ...$dependencies);
         } catch (\Exception $exception) {
-            if (!$exception instanceof RouteException) {
-                $exception = new RouteException(
-                    message: 'Something went wrong. Please try again.',
-                    errorCode: 'fatal-error',
-                    httpStatusCode: self::DEFAULT_EXCEPTION_HTTP_CODE
-                );
-            }
-
-            return $this->parseErrorToRestResponse(
-                $this->buildResponseError($exception),
-                $exception->getHttpStatusCode()
-            );
+            return $this->onError($exception);
         }
 
         if (is_wp_error($response)) {
@@ -58,6 +49,39 @@ class RestWrapper
         }
 
         return $response;
+    }
+
+    /**
+     * @param \Exception $exception
+     * @return \WP_REST_Response
+     */
+    protected function onError(\Exception $exception): \WP_REST_Response
+    {
+        $rootException = $exception;
+        if (!$exception instanceof RouteException) {
+            $exception = new RouteException(
+                message: 'Something went wrong. Please try again.',
+                errorCode: 'fatal-error',
+                httpStatusCode: self::DEFAULT_EXCEPTION_HTTP_CODE,
+            );
+        }
+
+        if ($this->debug === true) {
+            $exception = new RouteException(
+                message: $rootException->getMessage(),
+                errorCode: $exception->getErrorCode(),
+                httpStatusCode: $exception->getHttpStatusCode(),
+                additionalData: [
+                    'exception' => $rootException->getTraceAsString(),
+                ],
+                previous: $rootException,
+            );
+        }
+
+        return $this->parseErrorToRestResponse(
+            $this->buildResponseError($exception),
+            $exception->getHttpStatusCode()
+        );
     }
 
     /**
@@ -114,7 +138,7 @@ class RestWrapper
      * @return \WP_Error
      */
     protected function buildResponseError(
-        RouteException $exception
+        RouteException $exception,
     ): \WP_Error {
         return new \WP_Error(
             $exception->getErrorCode() ?? self::DEFAULT_EXCEPTION_CODE,

@@ -123,7 +123,7 @@ class RouteLoader
     public function register(): void
     {
         $routes = $this->getRoutes();
-        add_action('rest_api_init', function () use ($routes) {
+        add_action('rest_api_init', function () use ($routes): void {
             foreach ($routes as $route) {
                 register_rest_route(
                     $route->namespace,
@@ -141,10 +141,11 @@ class RouteLoader
     protected function buildRouteArgs(Route $route): array
     {
         $actions = [];
+        $isDebug = $this->options?->debug ?? false;
         foreach ($route->actions as $action) {
             $actions[] = [
                 'methods' => $action->methods,
-                'callback' => [new RestWrapper($action), 'execute'],
+                'callback' => [new RestWrapper($action, $isDebug), 'execute'],
                 'permission_callback' => [new PermissionWrapper($action), 'execute'],
                 'args' => [],
             ];

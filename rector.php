@@ -1,6 +1,6 @@
 <?php
 /**
- * Copyright (c) 2024 Dimitri BOUTEILLE (https://github.com/dimitriBouteille)
+ * Copyright (c) Dimitri BOUTEILLE (https://github.com/dimitriBouteille)
  * See LICENSE.txt for license details.
  *
  * Author: Dimitri BOUTEILLE <bonjour@dimitri-bouteille.fr>
@@ -13,23 +13,24 @@ use Rector\Config\RectorConfig;
 use Rector\Set\ValueObject\SetList;
 use Rector\TypeDeclaration\Rector\Property\TypedPropertyFromStrictConstructorRector;
 
-return static function (RectorConfig $rectorConfig): void {
-    $rectorConfig->paths([
+return RectorConfig::configure()
+    ->withPaths([
         __DIR__ . '/src',
-    ]);
-
-    // register single rule
-    $rectorConfig->rule(TypedPropertyFromStrictConstructorRector::class);
-
-    $rectorConfig
-        ->skip([
-            SimplifyBoolIdenticalTrueRector::class,
-            CallableThisArrayToAnonymousFunctionRector::class,
-            SimplifyIfReturnBoolRector::class,
-        ]);
-
-    $rectorConfig->sets([
-        SetList::CODE_QUALITY,
+        __DIR__ . '/tests',
+    ])
+    ->withRules([
+        TypedPropertyFromStrictConstructorRector::class,
+    ])
+    ->withPreparedSets(
+        codeQuality: true,
+        typeDeclarations: true,
+        instanceOf: true,
+    )
+    ->withSets([
         SetList::PHP_81,
+    ])
+    ->withSkip([
+        SimplifyBoolIdenticalTrueRector::class,
+        CallableThisArrayToAnonymousFunctionRector::class,
+        SimplifyIfReturnBoolRector::class,
     ]);
-};
