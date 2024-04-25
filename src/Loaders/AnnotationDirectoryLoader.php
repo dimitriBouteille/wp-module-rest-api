@@ -52,13 +52,13 @@ class AnnotationDirectoryLoader implements InterfaceLoader
 
         $routes = [];
         foreach ($files as $file) {
-            if (!$file->isFile() || !str_ends_with($file->getFilename(), '.php')) {
+            if (!$file->isFile() || $file->getExtension() !== 'php') {
                 continue;
             }
 
             /** @var class-string|null $class */
             $class = $this->findClass($file);
-            if ($class === null) {
+            if ($class === null || !class_exists($class)) {
                 continue;
             }
 
