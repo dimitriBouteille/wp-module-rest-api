@@ -60,8 +60,18 @@ class RouteLoader
      */
     protected function findRoutes(): array
     {
-        $directories = is_array($this->routeDirectory) ? $this->routeDirectory : [$this->routeDirectory];
+        $tmpDirectories = is_array($this->routeDirectory) ? $this->routeDirectory : [$this->routeDirectory];
         $routes = [];
+
+        $directories = [];
+        foreach ($tmpDirectories as $dir) {
+            $globalDirs = glob($dir);
+            if (!is_array($globalDirs)) {
+                continue;
+            }
+
+            $directories = array_merge($directories, $globalDirs);
+        }
 
         foreach ($directories as $directory) {
             $directory = new \SplFileInfo($directory);
