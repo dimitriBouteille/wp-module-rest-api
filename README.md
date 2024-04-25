@@ -1,6 +1,6 @@
 # WordPress Rest API
 
-![GitHub Release](https://img.shields.io/github/v/release/dimitriBouteille/wp-module-rest-api) [![tests](https://img.shields.io/github/actions/workflow/status/dimitriBouteille/wp-orm/tests.yml?label=tests)](https://github.com/dimitriBouteille/wp-module-rest-api/actions/workflows/tests.yml)
+[![GitHub Release](https://img.shields.io/github/v/release/dimitriBouteille/wp-module-rest-api)](https://github.com/dimitriBouteille/wp-module-rest-api/releases) [![tests](https://img.shields.io/github/actions/workflow/status/dimitriBouteille/wp-orm/tests.yml?label=tests)](https://github.com/dimitriBouteille/wp-module-rest-api/actions/workflows/tests.yml) [![Packagist Downloads](https://img.shields.io/packagist/dt/dbout/wp-module-rest-api?color=yellow)](https://packagist.org/packages/dbout/wp-module-rest-api)
 
 WordPress module designed for developers that want to add routes to the [WordPress Rest API](https://developer.wordpress.org/rest-api/) in a few moments.
 
