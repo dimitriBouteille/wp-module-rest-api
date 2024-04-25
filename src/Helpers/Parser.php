@@ -25,10 +25,28 @@ class Parser
             throw new \InvalidArgumentException('The content does not contain PHP code.');
         }
 
-        if (preg_match('#^namespace\s+(.+?);.*class\s+(\w+).+;$#sm', $fileContent, $m)) {
-            return $m[1].'\\'.$m[2];
+        $class = null;
+        $i = 0;
+        for (;$i < count($tokens);$i++) {
+            if ($tokens[$i][0] === T_CLASS) {
+                for ($j = $i + 1;$j < count($tokens);$j++) {
+                    if ($tokens[$j] === '{') {
+                        $class = $tokens[$i + 2][1];
+                    }
+                }
+            }
         }
 
-        return null;
+        if ($class === null || $class === '') {
+            return null;
+        }
+
+        $namespace =  null;
+        if (preg_match('#(^|\s)namespace(.*?)\s*;#sm', $fileContent, $m)) {
+            $namespace = $m[2] ?? null;
+            $namespace = $namespace !== null ? trim($namespace) : null;
+        }
+
+        return $namespace ? $namespace . "\\" . $class : $class;
     }
 }

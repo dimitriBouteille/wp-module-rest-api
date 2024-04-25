@@ -43,7 +43,7 @@ class ParserTest extends TestCase
             return $fileContent;
         };
 
-        yield 'Light php file' => [
+       yield 'Light php file' => [
             $load('source-1.php'),
             'App\Routes\MyRoute',
         ];
@@ -55,6 +55,11 @@ class ParserTest extends TestCase
 
         yield 'With phpdoc intro & named attributes' => [
             $load('source-3.php'),
+            'App\Routes\MyRoute',
+        ];
+
+        yield 'With class string in file content' => [
+            $load('source-4.php'),
             'App\Routes\MyRoute',
         ];
     }
