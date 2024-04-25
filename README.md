@@ -48,13 +48,17 @@ use Dbout\WpRestApi\RouteLoader;
 
 // One folder
 $loader = new RouteLoader(__DIR__ . '/src/Api/Routes');
-$loader->register();
 
 // Multiple folders
 $loader = new RouteLoader([
     __DIR__ . '/themes/my-theme/api'
     __DIR__ . '/src/Api/Routes',
 ]);
+
+// You can also use pattern
+$loader = new RouteLoader(__DIR__ . '/src/Modules/*/Api/Routes');
+
+$loader->register();
 ```
 
 > 💡 The module will automatically search for all classes that are in the folder and sub folder.
