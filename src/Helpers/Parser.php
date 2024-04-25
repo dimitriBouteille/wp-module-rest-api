@@ -27,9 +27,10 @@ class Parser
 
         $class = null;
         $i = 0;
-        for (;$i < count($tokens);$i++) {
+        $counter = count($tokens);
+        for (;$i < $counter;$i++) {
             if ($tokens[$i][0] === T_CLASS) {
-                for ($j = $i + 1;$j < count($tokens);$j++) {
+                for ($j = $i + 1;$j < $counter;$j++) {
                     if ($tokens[$j] === '{') {
                         $class = $tokens[$i + 2][1];
                     }

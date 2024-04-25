@@ -58,7 +58,7 @@ class ParserTest extends TestCase
             'App\Routes\MyRoute',
         ];
 
-        yield 'With class string in file content' => [
+        yield 'With phpdoc intro & multiple class/namespace label' => [
             $load('source-4.php'),
             'App\Routes\MyRoute',
         ];
