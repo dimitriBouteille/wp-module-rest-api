@@ -6,7 +6,7 @@
  * Author: Dimitri BOUTEILLE <bonjour@dimitri-bouteille.fr>
  */
 
-namespace Dbout\WpRestApi\Tests\fixtures;
+namespace Dbout\WpRestApi\Tests\Unit\fixtures;
 
 use Dbout\WpRestApi\Exceptions\RouteException;
 
