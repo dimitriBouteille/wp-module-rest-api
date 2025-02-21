@@ -44,7 +44,10 @@ class Parser
 
         $namespace =  null;
         if (preg_match('#(^|\s)namespace(.*?)\s*;#sm', $fileContent, $m)) {
+            // @phpstan-ignore-next-line
             $namespace = $m[2] ?? null;
+
+            // @phpstan-ignore-next-line
             $namespace = $namespace !== null ? trim($namespace) : null;
         }
 

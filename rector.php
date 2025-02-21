@@ -6,7 +6,6 @@
  * Author: Dimitri BOUTEILLE <bonjour@dimitri-bouteille.fr>
  */
 
-use Rector\CodeQuality\Rector\Array_\CallableThisArrayToAnonymousFunctionRector;
 use Rector\CodeQuality\Rector\Identical\SimplifyBoolIdenticalTrueRector;
 use Rector\CodeQuality\Rector\If_\SimplifyIfReturnBoolRector;
 use Rector\Config\RectorConfig;
@@ -31,6 +30,5 @@ return RectorConfig::configure()
     ])
     ->withSkip([
         SimplifyBoolIdenticalTrueRector::class,
-        CallableThisArrayToAnonymousFunctionRector::class,
         SimplifyIfReturnBoolRector::class,
     ]);

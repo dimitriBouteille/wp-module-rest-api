@@ -1,6 +1,6 @@
 <?php
 
-namespace Dbout\WpRestApi\Tests\fixtures;
+namespace Dbout\WpRestApi\Tests\Unit\fixtures;
 
 use Dbout\WpRestApi\Exceptions\NotFoundException;
 

@@ -6,12 +6,12 @@
  * Author: Dimitri BOUTEILLE <bonjour@dimitri-bouteille.fr>
  */
 
-namespace Dbout\WpRestApi\Tests\Wrappers;
+namespace Dbout\WpRestApi\Tests\Unit\Wrappers;
 
 use Dbout\WpRestApi\RouteAction;
-use Dbout\WpRestApi\Tests\fixtures\RouteWithException;
-use Dbout\WpRestApi\Tests\fixtures\RouteWithNotFoundException;
-use Dbout\WpRestApi\Tests\fixtures\RouteWithRouteException;
+use Dbout\WpRestApi\Tests\Unit\fixtures\RouteWithException;
+use Dbout\WpRestApi\Tests\Unit\fixtures\RouteWithNotFoundException;
+use Dbout\WpRestApi\Tests\Unit\fixtures\RouteWithRouteException;
 use Dbout\WpRestApi\Wrappers\RestWrapper;
 use PHPUnit\Framework\TestCase;
 

@@ -151,7 +151,11 @@ class RouteLoader
     protected function buildRouteArgs(Route $route): array
     {
         $actions = [];
-        $isDebug = $this->options?->debug ?? false;
+        $isDebug = $this->options?->debug;
+        if ($isDebug === null) {
+            $isDebug = false;
+        }
+
         foreach ($route->actions as $action) {
             $actions[] = [
                 'methods' => $action->methods,

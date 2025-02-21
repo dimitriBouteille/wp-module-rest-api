@@ -6,7 +6,7 @@
  * Author: Dimitri BOUTEILLE <bonjour@dimitri-bouteille.fr>
  */
 
-namespace Dbout\WpRestApi\Tests\Helpers;
+namespace Dbout\WpRestApi\Tests\Unit\Helpers;
 
 use Dbout\WpRestApi\Helpers\Parser;
 use PHPUnit\Framework\TestCase;
