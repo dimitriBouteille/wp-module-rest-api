@@ -1,12 +1,12 @@
 <?php
 /**
- * Copyright (c) 2024 Dimitri BOUTEILLE (https://github.com/dimitriBouteille)
+ * Copyright (c) Dimitri BOUTEILLE (https://github.com/dimitriBouteille)
  * See LICENSE.txt for license details.
  *
  * Author: Dimitri BOUTEILLE <bonjour@dimitri-bouteille.fr>
  */
 
-namespace Dbout\WpRestApi\Tests\Wrappers;
+namespace Dbout\WpRestApi\Tests\Unit\Wrappers;
 
 use Dbout\WpRestApi\RouteAction;
 use Dbout\WpRestApi\Wrappers\PermissionWrapper;
