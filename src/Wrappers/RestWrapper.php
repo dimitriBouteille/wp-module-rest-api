@@ -71,9 +71,9 @@ class RestWrapper
                 message: $rootException->getMessage(),
                 errorCode: $exception->getErrorCode(),
                 httpStatusCode: $exception->getHttpStatusCode(),
-                additionalData: [
+                additionalData: array_merge($exception->getAdditionalData(), [
                     'exception' => $rootException->getTraceAsString(),
-                ],
+                ]),
                 previous: $rootException,
             );
         }
