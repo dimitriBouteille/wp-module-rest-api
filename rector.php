@@ -10,15 +10,12 @@ use Rector\CodeQuality\Rector\Identical\SimplifyBoolIdenticalTrueRector;
 use Rector\CodeQuality\Rector\If_\SimplifyIfReturnBoolRector;
 use Rector\Config\RectorConfig;
 use Rector\Set\ValueObject\SetList;
-use Rector\TypeDeclaration\Rector\Property\TypedPropertyFromStrictConstructorRector;
+use Rector\TypeDeclaration\Rector\StmtsAwareInterface\SafeDeclareStrictTypesRector;
 
 return RectorConfig::configure()
     ->withPaths([
         __DIR__ . '/src',
         __DIR__ . '/tests',
-    ])
-    ->withRules([
-        TypedPropertyFromStrictConstructorRector::class,
     ])
     ->withPreparedSets(
         codeQuality: true,
@@ -31,4 +28,5 @@ return RectorConfig::configure()
     ->withSkip([
         SimplifyBoolIdenticalTrueRector::class,
         SimplifyIfReturnBoolRector::class,
+        SafeDeclareStrictTypesRector::class,
     ]);
