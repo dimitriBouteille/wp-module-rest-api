@@ -101,7 +101,7 @@ class RouteLoader
                 $actions[] = new RouteAction(
                     $className,
                     $methodName,
-                    array_values(array_filter($methods, 'is_string')),
+                    array_values(array_filter($methods, is_string(...))),
                     $rawAction['permissionCallback'] ?? null,
                 );
             }
