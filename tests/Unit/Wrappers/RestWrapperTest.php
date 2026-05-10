@@ -10,6 +10,7 @@ namespace Dbout\WpRestApi\Tests\Unit\Wrappers;
 
 use Dbout\WpRestApi\RouteAction;
 use Dbout\WpRestApi\Tests\Unit\fixtures\RouteWithException;
+use Dbout\WpRestApi\Tests\Unit\fixtures\RouteWithFatalError;
 use Dbout\WpRestApi\Tests\Unit\fixtures\RouteWithNotFoundException;
 use Dbout\WpRestApi\Tests\Unit\fixtures\RouteWithRouteException;
 use Dbout\WpRestApi\Wrappers\RestWrapper;
@@ -79,6 +80,20 @@ class RestWrapperTest extends TestCase
             false,
             'My route exception.',
             400,
+        ];
+
+        yield 'With \TypeError and debug mode' => [
+            RouteWithFatalError::class,
+            true,
+            'My custom type error.',
+            500,
+        ];
+
+        yield 'With \TypeError and without debug mode' => [
+            RouteWithFatalError::class,
+            false,
+            'Something went wrong. Please try again.',
+            500,
         ];
     }
 
