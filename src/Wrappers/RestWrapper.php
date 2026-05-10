@@ -33,10 +33,11 @@ class RestWrapper
     public function execute(\WP_REST_Request $request): \WP_REST_Response
     {
         try {
-            $classRef = new \ReflectionClass($this->action->className);
-            $method = $classRef->getMethod($this->action->methodName);
-            $dependencies = $this->collectDependencies($method, $request);
-            $response = $method->invoke($classRef->newInstance(), ...$dependencies);
+            $className = $this->action->className;
+            $methodName = $this->action->methodName;
+            $dependencies = $this->collectDependencies($className, $methodName, $request);
+            $instance = new $className();
+            $response = $instance->{$methodName}(...$dependencies);
         } catch (\Throwable $exception) {
             return $this->onError($exception);
         }
@@ -85,48 +86,50 @@ class RestWrapper
     }
 
     /**
-     * @param \ReflectionMethod $method
+     * @param class-string $className
+     * @param string $methodName
      * @param \WP_REST_Request $request
+     * @throws \ReflectionException
      * @return array<int, mixed>
      */
-    protected function collectDependencies(\ReflectionMethod $method, \WP_REST_Request $request): array
+    protected function collectDependencies(string $className, string $methodName, \WP_REST_Request $request): array
     {
         $dependencies = [];
-        foreach ($method->getParameters() as $parameter) {
-            $type = $parameter->getType();
-            if (!$type instanceof \ReflectionNamedType) {
+        $requestClass = get_class($request);
+
+        foreach (ReflectionCache::parameters($className, $methodName) as $descriptor) {
+            if ($descriptor->typeName === null) {
                 continue;
             }
 
-            if ($type->getName() === get_class($request)) {
-                $dependencies[$parameter->getPosition()] = $request;
+            if ($descriptor->typeName === $requestClass) {
+                $dependencies[$descriptor->position] = $request;
                 continue;
             }
 
-            if (!$request->has_param($parameter->getName())) {
+            if (!$request->has_param($descriptor->name)) {
                 continue;
             }
 
-            $value = $request->get_param($parameter->getName());
-            $value = $this->castRequestArgument($type, $value);
-            $dependencies[$parameter->getPosition()] = $value;
+            $value = $request->get_param($descriptor->name);
+            $dependencies[$descriptor->position] = $this->castRequestArgument($descriptor->typeName, $value);
         }
 
         return $dependencies;
     }
 
     /**
-     * @param \ReflectionNamedType $type
+     * @param string $typeName
      * @param mixed $value
      * @return mixed
      */
-    protected function castRequestArgument(\ReflectionNamedType $type, mixed $value): mixed
+    protected function castRequestArgument(string $typeName, mixed $value): mixed
     {
         if ($value === null) {
             return null;
         }
 
-        return match ($type->getName()) {
+        return match ($typeName) {
             'int' => (int)$value,
             'string' => (string)$value,
             default => $value,
