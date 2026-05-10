@@ -36,15 +36,17 @@ class PermissionWrapper
         }
 
         try {
-            $class = new \ReflectionClass($permissionCallback);
-            if ($class->implementsInterface(PermissionInterface::class)) {
-                /** @var PermissionInterface $instance */
-                $instance = $class->newInstance();
-                return $instance->allow($request);
+            if (is_string($permissionCallback) && class_exists($permissionCallback)) {
+                $ref = new \ReflectionClass($permissionCallback);
+                if ($ref->implementsInterface(PermissionInterface::class)) {
+                    /** @var PermissionInterface $instance */
+                    $instance = $ref->newInstance();
+                    return $instance->allow($request);
+                }
             }
 
             if (is_callable($permissionCallback)) {
-                return call_user_func($permissionCallback, $request);
+                return ($permissionCallback)($request);
             }
 
             throw new ApiException('Invalid permissionCallback argument.');
