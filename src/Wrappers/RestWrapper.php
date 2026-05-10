@@ -37,7 +37,7 @@ class RestWrapper
             $method = $classRef->getMethod($this->action->methodName);
             $dependencies = $this->collectDependencies($method, $request);
             $response = $method->invoke($classRef->newInstance(), ...$dependencies);
-        } catch (\Exception $exception) {
+        } catch (\Throwable $exception) {
             return $this->onError($exception);
         }
 
@@ -52,10 +52,10 @@ class RestWrapper
     }
 
     /**
-     * @param \Exception $exception
+     * @param \Throwable $exception
      * @return \WP_REST_Response
      */
-    protected function onError(\Exception $exception): \WP_REST_Response
+    protected function onError(\Throwable $exception): \WP_REST_Response
     {
         $rootException = $exception;
         if (!$exception instanceof RouteException) {
