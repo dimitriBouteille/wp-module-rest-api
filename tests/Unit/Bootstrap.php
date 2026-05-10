@@ -70,6 +70,8 @@ class Bootstrap
         foreach ($paths as $path) {
             require sprintf('%s/wp-includes/%s', $this->wpDirectory, $path);
         }
+
+        require __DIR__ . '/wp-stubs.php';
     }
 }
 
