@@ -42,16 +42,135 @@ class RouteLoader
         $cacheKey = $this->options->cacheKey;
         $cacheRoutes = $cache->getItem($cacheKey);
         if ($cacheRoutes->isHit()) {
-            try {
-                return unserialize($cacheRoutes->get());
-            } catch (\Exception) {
+            $payload = $cacheRoutes->get();
+            $hydrated = is_string($payload) ? $this->hydrateRoutes($payload) : null;
+            if ($hydrated !== null) {
+                return $hydrated;
             }
         }
 
         $routes = $this->findRoutes();
-        $cacheRoutes->set(serialize($routes));
-        $cache->save($cacheRoutes);
+        $serialized = $this->dehydrateRoutes($routes);
+        if ($serialized !== null) {
+            $cacheRoutes->set($serialized);
+            $cache->save($cacheRoutes);
+        }
+
         return $routes;
+    }
+
+    /**
+     * @param string $payload JSON payload retrieved from the cache.
+     * @return Route[]|null Returns null when the payload is corrupted or
+     *                     does not match the expected shape; the caller is
+     *                     expected to fall back to a fresh discovery.
+     */
+    protected function hydrateRoutes(string $payload): ?array
+    {
+        $decoded = json_decode($payload, true);
+        if (!is_array($decoded)) {
+            return null;
+        }
+
+        $routes = [];
+        foreach ($decoded as $entry) {
+            if (!is_array($entry)) {
+                return null;
+            }
+
+            $namespace = $entry['namespace'] ?? null;
+            $path = $entry['path'] ?? null;
+            $rawActions = $entry['actions'] ?? null;
+            if (!is_string($namespace) || !is_string($path) || !is_array($rawActions)) {
+                return null;
+            }
+
+            $actions = [];
+            foreach ($rawActions as $rawAction) {
+                if (!is_array($rawAction)) {
+                    return null;
+                }
+
+                $className = $rawAction['className'] ?? null;
+                $methodName = $rawAction['methodName'] ?? null;
+                $methods = $rawAction['methods'] ?? null;
+                if (!is_string($className) || !is_string($methodName) || !is_array($methods)) {
+                    return null;
+                }
+
+                $actions[] = new RouteAction(
+                    $className,
+                    $methodName,
+                    array_values(array_filter($methods, is_string(...))),
+                    $rawAction['permissionCallback'] ?? null,
+                );
+            }
+
+            $routes[] = new Route($namespace, $path, $actions);
+        }
+
+        return $routes;
+    }
+
+    /**
+     * @param Route[] $routes
+     * @return string|null JSON payload, or null when at least one route uses
+     *                    a permissionCallback that cannot be safely cached
+     *                    (e.g. a Closure or a non-callable object).
+     */
+    protected function dehydrateRoutes(array $routes): ?string
+    {
+        $payload = [];
+        foreach ($routes as $route) {
+            $actions = [];
+            foreach ($route->actions as $action) {
+                if (!$this->isCacheableCallback($action->permissionCallback)) {
+                    trigger_error(sprintf(
+                        'Route %s/%s has a permissionCallback that cannot be cached (Closure or non-serializable value); the route cache will be skipped.',
+                        $route->namespace,
+                        $route->path,
+                    ), \E_USER_NOTICE);
+
+                    return null;
+                }
+
+                $actions[] = [
+                    'className' => $action->className,
+                    'methodName' => $action->methodName,
+                    'methods' => $action->methods,
+                    'permissionCallback' => $action->permissionCallback,
+                ];
+            }
+
+            $payload[] = [
+                'namespace' => $route->namespace,
+                'path' => $route->path,
+                'actions' => $actions,
+            ];
+        }
+
+        try {
+            return json_encode($payload, \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES);
+        } catch (\JsonException) {
+            return null;
+        }
+    }
+
+    /**
+     * Whether the given permission callback can be safely persisted as JSON
+     * and rebuilt as a usable callback later on.
+     */
+    protected function isCacheableCallback(mixed $callback): bool
+    {
+        if ($callback === null || is_string($callback)) {
+            return true;
+        }
+
+        return is_array($callback)
+            && count($callback) === 2
+            && isset($callback[0], $callback[1])
+            && is_string($callback[0])
+            && is_string($callback[1]);
     }
 
     /**
