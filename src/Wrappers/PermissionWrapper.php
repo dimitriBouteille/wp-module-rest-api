@@ -36,13 +36,10 @@ class PermissionWrapper
         }
 
         try {
-            if (is_string($permissionCallback) && class_exists($permissionCallback)) {
-                $ref = new \ReflectionClass($permissionCallback);
-                if ($ref->implementsInterface(PermissionInterface::class)) {
-                    /** @var PermissionInterface $instance */
-                    $instance = $ref->newInstance();
-                    return $instance->allow($request);
-                }
+            if (is_string($permissionCallback) && class_exists($permissionCallback) && ReflectionCache::implementsPermissionInterface($permissionCallback)) {
+                /** @var PermissionInterface $instance */
+                $instance = new $permissionCallback();
+                return $instance->allow($request);
             }
 
             if (is_callable($permissionCallback)) {
