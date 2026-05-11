@@ -9,10 +9,14 @@
 namespace Dbout\WpRestApi\Tests\Unit\Wrappers;
 
 use Dbout\WpRestApi\RouteAction;
+use Dbout\WpRestApi\Tests\Unit\fixtures\RouteReturningResponse;
+use Dbout\WpRestApi\Tests\Unit\fixtures\RouteReturningWpError;
 use Dbout\WpRestApi\Tests\Unit\fixtures\RouteWithException;
 use Dbout\WpRestApi\Tests\Unit\fixtures\RouteWithFatalError;
 use Dbout\WpRestApi\Tests\Unit\fixtures\RouteWithNotFoundException;
+use Dbout\WpRestApi\Tests\Unit\fixtures\RouteWithRequestParam;
 use Dbout\WpRestApi\Tests\Unit\fixtures\RouteWithRouteException;
+use Dbout\WpRestApi\Tests\Unit\fixtures\RouteWithTypedParams;
 use Dbout\WpRestApi\Wrappers\RestWrapper;
 use PHPUnit\Framework\TestCase;
 
@@ -114,6 +118,79 @@ class RestWrapperTest extends TestCase
 
         $response = $wrapper->execute(new \WP_REST_Request());
         $this->exceptionAsserts($response, 'Object not found.', 404);
+    }
+
+    /**
+     * @covers ::execute
+     */
+    public function testHandlerReturningWpRestResponseIsReturnedAsIs(): void
+    {
+        $action = new RouteAction(RouteReturningResponse::class, 'execute', ['GET'], null);
+        $wrapper = new RestWrapper($action);
+
+        $response = $wrapper->execute(new \WP_REST_Request());
+
+        $this->assertInstanceOf(\WP_REST_Response::class, $response);
+        $this->assertSame(200, $response->get_status());
+        $this->assertSame(['ok' => true], $response->get_data());
+    }
+
+    /**
+     * @covers ::execute
+     * @covers ::collectDependencies
+     */
+    public function testWpRestRequestIsInjectedIntoHandler(): void
+    {
+        $action = new RouteAction(RouteWithRequestParam::class, 'execute', ['POST'], null);
+        $wrapper = new RestWrapper($action);
+
+        $request = new \WP_REST_Request('POST', '/dummy');
+        $response = $wrapper->execute($request);
+
+        $this->assertSame(200, $response->get_status());
+        $this->assertSame(['method' => 'POST', 'received' => true], $response->get_data());
+    }
+
+    /**
+     * @covers ::execute
+     * @covers ::collectDependencies
+     * @covers ::castRequestArgument
+     */
+    public function testTypedRequestParametersAreCast(): void
+    {
+        $action = new RouteAction(RouteWithTypedParams::class, 'execute', ['GET'], null);
+        $wrapper = new RestWrapper($action);
+
+        $request = new \WP_REST_Request('GET', '/dummy');
+        $request->set_param('id', '42');     // strings from query strings
+        $request->set_param('sort', 'asc');
+        $response = $wrapper->execute($request);
+
+        $this->assertSame(200, $response->get_status());
+        $this->assertSame([
+            'id' => 42,
+            'idType' => 'int',
+            'sort' => 'asc',
+            'sortType' => 'string',
+        ], $response->get_data());
+    }
+
+    /**
+     * @covers ::execute
+     * @covers ::parseErrorToRestResponse
+     */
+    public function testHandlerReturningWpErrorIsConvertedToResponse(): void
+    {
+        $action = new RouteAction(RouteReturningWpError::class, 'execute', ['GET'], null);
+        $wrapper = new RestWrapper($action);
+
+        $response = $wrapper->execute(new \WP_REST_Request());
+
+        $this->assertSame(500, $response->get_status());
+        $error = $response->get_data()['error'] ?? null;
+        $this->assertSame('forbidden_action', $error['code']);
+        $this->assertSame('You may not do this.', $error['message']);
+        $this->assertSame(['details' => 'no'], $error['data']);
     }
 
     /**
