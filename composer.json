@@ -19,6 +19,9 @@
   },
   "minimum-stability": "dev",
   "prefer-stable": true,
+  "repositories": [
+    { "type": "composer", "url": "https://wpackagist.org" }
+  ],
   "require": {
     "php": ">=8.1",
     "psr/cache": "^1.0|^2.0|^3.0"
@@ -34,19 +37,24 @@
     }
   },
   "require-dev": {
-    "phpunit/phpunit": "^10.5",
+    "phpunit/phpunit": "^9.6",
     "phpstan/phpstan": "^2.1",
     "friendsofphp/php-cs-fixer": "^3.69",
     "phpstan/extension-installer": "^1.4",
     "szepeviktor/phpstan-wordpress": "^2.0",
     "phpstan/phpstan-phpunit": "^2.0",
     "roots/wordpress": "^6.7",
-    "rector/rector": "2.4.0"
+    "rector/rector": "2.4.0",
+    "wp-phpunit/wp-phpunit": "^6.7",
+    "yoast/phpunit-polyfills": "^2.0",
+    "wpackagist-plugin/sqlite-database-integration": "^2.1",
+    "composer/installers": "^2.3"
   },
   "config": {
     "allow-plugins": {
       "roots/wordpress-core-installer": true,
-      "phpstan/extension-installer": true
+      "phpstan/extension-installer": true,
+      "composer/installers": true
     }
   },
   "extra": {
@@ -55,13 +63,18 @@
         "extension.neon"
       ]
     },
-    "wordpress-install-dir": "web/wordpress"
+    "wordpress-install-dir": "web/wordpress",
+    "installer-paths": {
+      "web/wordpress/wp-content/plugins/{$name}/": ["type:wordpress-plugin"]
+    }
   },
   "scripts": {
     "rector": "vendor/bin/rector process src --dry-run",
     "fix:rector": "vendor/bin/rector process src",
     "phpstan": "vendor/bin/phpstan analyse -c phpstan.neon",
     "phpunit": "vendor/bin/phpunit",
+    "test:unit": "vendor/bin/phpunit",
+    "test:wordpress": "vendor/bin/phpunit -c phpunit-wp.xml",
     "csFixer": "vendor/bin/php-cs-fixer fix --verbose --diff --dry-run",
     "fix:csFixer": "vendor/bin/php-cs-fixer fix"
   }
