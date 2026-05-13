@@ -8,6 +8,8 @@
 
 namespace Dbout\WpRestApi\Wrappers;
 
+use Dbout\WpRestApi\ErrorFormat\DefaultFormatter;
+use Dbout\WpRestApi\ErrorFormat\ErrorFormatterInterface;
 use Dbout\WpRestApi\Exceptions\RouteException;
 use Dbout\WpRestApi\RouteAction;
 
@@ -15,14 +17,17 @@ class RestWrapper
 {
     private const DEFAULT_EXCEPTION_CODE = 'route-exception';
     private const DEFAULT_EXCEPTION_HTTP_CODE = 500;
+    private const REDACTED_MESSAGE = 'Something went wrong. Please try again.';
 
     /**
      * @param RouteAction $action
      * @param bool $debug
+     * @param ErrorFormatterInterface $errorFormatter
      */
     public function __construct(
         protected RouteAction $action,
         protected bool $debug = false,
+        protected ErrorFormatterInterface $errorFormatter = new DefaultFormatter(),
     ) {
     }
 
@@ -43,10 +48,7 @@ class RestWrapper
         }
 
         if (is_wp_error($response)) {
-            return $this->parseErrorToRestResponse(
-                $response,
-                self::DEFAULT_EXCEPTION_HTTP_CODE
-            );
+            return $this->onWpError($response);
         }
 
         return $response;
@@ -61,28 +63,53 @@ class RestWrapper
         $rootException = $exception;
         if (!$exception instanceof RouteException) {
             $exception = new RouteException(
-                message: 'Something went wrong. Please try again.',
+                message: $this->debug === true ? $rootException->getMessage() : self::REDACTED_MESSAGE,
                 errorCode: 'fatal-error',
                 httpStatusCode: self::DEFAULT_EXCEPTION_HTTP_CODE,
             );
         }
 
-        if ($this->debug === true) {
-            $exception = new RouteException(
-                message: $rootException->getMessage(),
-                errorCode: $exception->getErrorCode(),
-                httpStatusCode: $exception->getHttpStatusCode(),
-                additionalData: array_merge($exception->getAdditionalData(), [
-                    'exception' => $rootException->getTraceAsString(),
-                ]),
-                previous: $rootException,
-            );
+        $additionalData = $exception->getAdditionalData();
+        if ($this->debug === true && $this->isWpDebugEnabled()) {
+            $additionalData['exception'] = $rootException->getTraceAsString();
         }
 
-        return $this->parseErrorToRestResponse(
-            $this->buildResponseError($exception),
-            $exception->getHttpStatusCode()
+        $exception = new RouteException(
+            message: $exception->getMessage(),
+            errorCode: $exception->getErrorCode(),
+            httpStatusCode: $exception->getHttpStatusCode(),
+            additionalData: $additionalData,
+            previous: $rootException,
         );
+
+        return $this->buildErrorResponse($exception);
+    }
+
+    /**
+     * @param \WP_Error $error
+     * @return \WP_REST_Response
+     */
+    protected function onWpError(\WP_Error $error): \WP_REST_Response
+    {
+        $code = null;
+        $message = '';
+        $data = [];
+        foreach ((array) $error->errors as $errorCode => $messages) {
+            $code = (string) $errorCode;
+            $message = (string) ($messages[0] ?? '');
+            $rawData = $error->get_error_data($errorCode);
+            $data = is_array($rawData) ? $rawData : [];
+            break;
+        }
+
+        $exception = new RouteException(
+            message: $message,
+            errorCode: $code ?? self::DEFAULT_EXCEPTION_CODE,
+            httpStatusCode: self::DEFAULT_EXCEPTION_HTTP_CODE,
+            additionalData: $data,
+        );
+
+        return $this->buildErrorResponse($exception);
     }
 
     /**
@@ -137,44 +164,30 @@ class RestWrapper
     }
 
     /**
-     * @param RouteException $exception
-     * @return \WP_Error
+     * Defense in depth: stack traces are only ever included when both the
+     * RouteLoaderOptions::$debug flag and the WP_DEBUG constant are true.
+     * Exposed as a protected method so tests can simulate WP_DEBUG=false
+     * without having to redefine a PHP constant.
      */
-    protected function buildResponseError(
-        RouteException $exception,
-    ): \WP_Error {
-        return new \WP_Error(
-            $exception->getErrorCode() ?? self::DEFAULT_EXCEPTION_CODE,
-            $exception->getMessage(),
-            $exception->getAdditionalData()
-        );
+    protected function isWpDebugEnabled(): bool
+    {
+        return defined('WP_DEBUG') && WP_DEBUG === true;
     }
 
     /**
-     * @param \WP_Error $error
-     * @param int $httpCode
+     * @param RouteException $exception
      * @return \WP_REST_Response
      */
-    protected function parseErrorToRestResponse(\WP_Error $error, int $httpCode): \WP_REST_Response
+    protected function buildErrorResponse(RouteException $exception): \WP_REST_Response
     {
-        $errors = [];
-        foreach ((array) $error->errors as $code => $messages) {
-            foreach ((array) $messages as $message) {
-                $errors[] = [
-                    'code' => $code,
-                    'message' => $message,
-                    'data' => $error->get_error_data($code),
-                ];
-            }
+        $body = $this->errorFormatter->format($exception, $this->debug);
+        $response = new \WP_REST_Response($body, $exception->getHttpStatusCode());
+
+        $contentType = $this->errorFormatter->contentType();
+        if ($contentType !== null) {
+            $response->header('Content-Type', $contentType);
         }
 
-        $data = array_shift($errors);
-        if ($errors !== []) {
-            $data['additional_errors'] = $errors;
-        }
-
-        return new \WP_REST_Response([
-            'error' => $data,
-        ], $httpCode);
+        return $response;
     }
 }
