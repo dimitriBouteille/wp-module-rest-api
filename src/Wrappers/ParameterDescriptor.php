@@ -16,13 +16,16 @@ namespace Dbout\WpRestApi\Wrappers;
 final class ParameterDescriptor
 {
     /**
-     * @param string $name Declared parameter name (used to look up request params).
+     * @param string $name Declared PHP parameter name.
+     * @param string $requestName Key clients send on the request; defaults to
+     *                            the PHP name unless overridden by #[Param(name: …)].
      * @param int $position Zero-based parameter position in the method signature.
      * @param string|null $typeName FQCN or scalar type name; null when the parameter
      *                              has no type or a non-named type (intersection / union).
      */
     public function __construct(
         public readonly string $name,
+        public readonly string $requestName,
         public readonly int $position,
         public readonly ?string $typeName,
     ) {

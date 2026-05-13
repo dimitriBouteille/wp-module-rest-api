@@ -134,11 +134,11 @@ class RestWrapper
                 continue;
             }
 
-            if (!$request->has_param($descriptor->name)) {
+            if (!$request->has_param($descriptor->requestName)) {
                 continue;
             }
 
-            $value = $request->get_param($descriptor->name);
+            $value = $request->get_param($descriptor->requestName);
             $dependencies[$descriptor->position] = $this->castRequestArgument($descriptor->typeName, $value);
         }
 
@@ -156,9 +156,15 @@ class RestWrapper
             return null;
         }
 
+        if (is_subclass_of($typeName, \BackedEnum::class)) {
+            return $typeName::from($value);
+        }
+
         return match ($typeName) {
             'int' => (int)$value,
             'string' => (string)$value,
+            'float' => (float)$value,
+            'bool' => (bool)$value,
             default => $value,
         };
     }

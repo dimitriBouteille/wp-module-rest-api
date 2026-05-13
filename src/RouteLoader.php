@@ -99,11 +99,17 @@ class RouteLoader
                     return null;
                 }
 
+                $params = $this->hydrateParams($rawAction['params'] ?? []);
+                if ($params === null) {
+                    return null;
+                }
+
                 $actions[] = new RouteAction(
                     $className,
                     $methodName,
                     array_values(array_filter($methods, is_string(...))),
                     $rawAction['permissionCallback'] ?? null,
+                    $params,
                 );
             }
 
@@ -135,11 +141,23 @@ class RouteLoader
                     return null;
                 }
 
+                $serializedParams = $this->dehydrateParams($action->params);
+                if ($serializedParams === null) {
+                    trigger_error(sprintf(
+                        'Route %s/%s has a Param callback that cannot be cached (Closure or non-serializable value); the route cache will be skipped.',
+                        $route->namespace,
+                        $route->path,
+                    ), \E_USER_NOTICE);
+
+                    return null;
+                }
+
                 $actions[] = [
                     'className' => $action->className,
                     'methodName' => $action->methodName,
                     'methods' => $action->methods,
                     'permissionCallback' => $action->permissionCallback,
+                    'params' => $serializedParams,
                 ];
             }
 
@@ -155,6 +173,64 @@ class RouteLoader
         } catch (\JsonException) {
             return null;
         }
+    }
+
+    /**
+     * @param mixed $raw Raw payload from the cache; not yet validated.
+     * @return array<ParamSpec>|null Null when the payload shape is invalid.
+     */
+    protected function hydrateParams(mixed $raw): ?array
+    {
+        if (!is_array($raw)) {
+            return null;
+        }
+
+        $params = [];
+        foreach ($raw as $entry) {
+            if (!is_array($entry)) {
+                return null;
+            }
+
+            $phpName = $entry['phpName'] ?? null;
+            $requestName = $entry['requestName'] ?? null;
+            $args = $entry['args'] ?? null;
+            if (!is_string($phpName) || !is_string($requestName) || !is_array($args)) {
+                return null;
+            }
+
+            $params[] = new ParamSpec($phpName, $requestName, $args);
+        }
+
+        return $params;
+    }
+
+    /**
+     * @param array<ParamSpec> $params
+     * @return array<int, array<string, mixed>>|null Null when at least one
+     *         param has a sanitize/validate callback that cannot be cached.
+     */
+    protected function dehydrateParams(array $params): ?array
+    {
+        $out = [];
+        foreach ($params as $spec) {
+            foreach (['sanitize_callback', 'validate_callback'] as $key) {
+                if (!array_key_exists($key, $spec->args)) {
+                    continue;
+                }
+
+                if (!$this->isCacheableCallback($spec->args[$key])) {
+                    return null;
+                }
+            }
+
+            $out[] = [
+                'phpName' => $spec->phpName,
+                'requestName' => $spec->requestName,
+                'args' => $spec->args,
+            ];
+        }
+
+        return $out;
     }
 
     /**
@@ -284,10 +360,24 @@ class RouteLoader
                     $errorFormatter,
                 ), 'execute'],
                 'permission_callback' => [new PermissionWrapper($action), 'execute'],
-                'args' => [],
+                'args' => $this->compileArgs($action),
             ];
         }
 
         return $actions;
+    }
+
+    /**
+     * @param RouteAction $action
+     * @return array<string, array<string, mixed>>
+     */
+    protected function compileArgs(RouteAction $action): array
+    {
+        $args = [];
+        foreach ($action->params as $spec) {
+            $args[$spec->requestName] = $spec->args;
+        }
+
+        return $args;
     }
 }

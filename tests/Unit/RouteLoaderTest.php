@@ -152,6 +152,106 @@ class RouteLoaderTest extends TestCase
     }
 
     /**
+     * @covers ::buildRouteArgs
+     * @covers ::compileArgs
+     */
+    public function testBuildRouteArgsCompilesSchema(): void
+    {
+        $loader = new RouteLoader(__DIR__ . '/fixtures/Loaders/WithParams');
+        $routes = $this->invokeGetRoutes($loader);
+
+        $this->assertCount(1, $routes);
+        $args = $this->invokeBuildRouteArgs($loader, $routes[0]);
+        $this->assertCount(1, $args, 'WithParams fixture exposes a single action.');
+
+        $compiled = $args[0]['args'];
+        $this->assertArrayHasKey('id', $compiled);
+        $this->assertArrayHasKey('perPage', $compiled);
+        $this->assertArrayHasKey('q', $compiled, 'The request key MUST be Param::$name when overridden.');
+
+        $this->assertTrue($compiled['id']['required']);
+        $this->assertSame('integer', $compiled['id']['type']);
+        $this->assertSame('absint', $compiled['id']['sanitize_callback']);
+        $this->assertSame('Item identifier', $compiled['id']['description']);
+
+        $this->assertSame(10, $compiled['perPage']['default']);
+
+        $this->assertSame('sanitize_text_field', $compiled['q']['sanitize_callback']);
+    }
+
+    /**
+     * @covers ::buildRouteArgs
+     * @covers ::compileArgs
+     */
+    public function testEnumParameterPopulatesEnumOption(): void
+    {
+        $loader = new RouteLoader(__DIR__ . '/fixtures/Loaders/WithEnumParam');
+        $routes = $this->invokeGetRoutes($loader);
+
+        $this->assertCount(1, $routes);
+        $args = $this->invokeBuildRouteArgs($loader, $routes[0]);
+
+        $directionArg = $args[0]['args']['direction'] ?? null;
+        $this->assertIsArray($directionArg);
+        $this->assertSame('string', $directionArg['type']);
+        $this->assertSame(['asc', 'desc'], $directionArg['enum']);
+    }
+
+    /**
+     * @covers ::buildRouteArgs
+     * @covers ::compileArgs
+     */
+    public function testHandlerWithoutParamAttributeRegistersEmptyArgs(): void
+    {
+        $loader = new RouteLoader(self::FIXTURE_DIR);
+        $routes = $this->invokeGetRoutes($loader);
+
+        $args = $this->invokeBuildRouteArgs($loader, $routes[0]);
+        $this->assertSame([], $args[0]['args'], 'Backward compat: handlers without #[Param] stay with empty args.');
+    }
+
+    /**
+     * @covers ::dehydrateRoutes
+     * @covers ::hydrateRoutes
+     * @covers ::dehydrateParams
+     * @covers ::hydrateParams
+     */
+    public function testParamSpecSurvivesCacheRoundtrip(): void
+    {
+        $cache = new ArrayCachePool();
+        $loader = new RouteLoader(
+            __DIR__ . '/fixtures/Loaders/WithParams',
+            new RouteLoaderOptions(cache: $cache),
+        );
+
+        $first = $this->invokeGetRoutes($loader);
+
+        // Second call hits the cache and rebuilds RouteAction::$params from JSON.
+        $bogus = new RouteLoader('/does/not/exist', new RouteLoaderOptions(cache: $cache));
+        $second = $this->invokeGetRoutes($bogus);
+
+        $this->assertSame(
+            $this->paramArgsByRequestName($first[0]->actions[0]->params),
+            $this->paramArgsByRequestName($second[0]->actions[0]->params),
+            'ParamSpec list must come back identical from the cache.',
+        );
+    }
+
+    /**
+     * @param array<\Dbout\WpRestApi\ParamSpec> $params
+     * @return array<string, array<string, mixed>>
+     */
+    private function paramArgsByRequestName(array $params): array
+    {
+        $out = [];
+        foreach ($params as $spec) {
+            $out[$spec->requestName] = $spec->args;
+        }
+
+        return $out;
+    }
+
+    /**
      * @return Route[]
      */
     private function invokeGetRoutes(RouteLoader $loader): array
@@ -162,6 +262,19 @@ class RouteLoaderTest extends TestCase
         /** @var Route[] $routes */
         $routes = $method->invoke($loader);
         return $routes;
+    }
+
+    /**
+     * @return array<array<string, mixed>>
+     */
+    private function invokeBuildRouteArgs(RouteLoader $loader, Route $route): array
+    {
+        $method = new \ReflectionMethod(RouteLoader::class, 'buildRouteArgs');
+        $method->setAccessible(true);
+
+        /** @var array<array<string, mixed>> $args */
+        $args = $method->invoke($loader, $route);
+        return $args;
     }
 }
 
