@@ -8,6 +8,7 @@
 
 namespace Dbout\WpRestApi\Tests\Unit\Wrappers;
 
+use Dbout\WpRestApi\ErrorFormat\ProblemJsonFormatter;
 use Dbout\WpRestApi\RouteAction;
 use Dbout\WpRestApi\Tests\Unit\fixtures\RouteReturningResponse;
 use Dbout\WpRestApi\Tests\Unit\fixtures\RouteReturningWpError;
@@ -191,6 +192,88 @@ class RestWrapperTest extends TestCase
         $this->assertSame('forbidden_action', $error['code']);
         $this->assertSame('You may not do this.', $error['message']);
         $this->assertSame(['details' => 'no'], $error['data']);
+    }
+
+    /**
+     * @covers ::onError
+     * @covers ::buildErrorResponse
+     */
+    public function testProblemJsonContentType(): void
+    {
+        $action = new RouteAction(RouteWithNotFoundException::class, 'execute', ['GET'], null);
+        $wrapper = new RestWrapper(
+            $action,
+            false,
+            new ProblemJsonFormatter(),
+        );
+
+        $response = $wrapper->execute(new \WP_REST_Request());
+
+        $this->assertSame(404, $response->get_status());
+        $this->assertSame(ProblemJsonFormatter::CONTENT_TYPE, $response->get_headers()['Content-Type'] ?? null);
+
+        $body = $response->get_data();
+        $this->assertSame('about:blank', $body['type']);
+        $this->assertSame('not-found', $body['title']);
+        $this->assertSame(404, $body['status']);
+        $this->assertSame('Object not found.', $body['detail']);
+        $this->assertArrayNotHasKey('error', $body, 'Problem+json body MUST NOT carry the legacy "error" envelope.');
+    }
+
+    /**
+     * @covers ::onError
+     * @covers ::isWpDebugEnabled
+     */
+    public function testDebugModeRequiresWpDebug(): void
+    {
+        $action = new RouteAction(RouteWithRouteException::class, 'execute', ['GET'], null);
+
+        // Subclass overrides isWpDebugEnabled() to simulate WP_DEBUG=false;
+        // the trace must NOT be exposed even though $debug is true.
+        $wrapper = new class ($action, true) extends RestWrapper {
+            protected function isWpDebugEnabled(): bool
+            {
+                return false;
+            }
+        };
+
+        $response = $wrapper->execute(new \WP_REST_Request());
+        $data = $response->get_data()['error']['data'] ?? [];
+        $this->assertArrayNotHasKey(
+            'exception',
+            $data,
+            'Stack trace MUST stay out of the response when WP_DEBUG is false, even with debug=true.'
+        );
+
+        // Sanity: with WP_DEBUG=true (bootstrap default) the trace IS attached.
+        $wrapperWithWpDebug = new RestWrapper($action, true);
+        $dataWithWpDebug = $wrapperWithWpDebug->execute(new \WP_REST_Request())->get_data()['error']['data'] ?? [];
+        $this->assertArrayHasKey('exception', $dataWithWpDebug);
+    }
+
+    /**
+     * @covers ::onError
+     */
+    public function testUnknownExceptionMessageIsRedactedByDefault(): void
+    {
+        $action = new RouteAction(RouteWithException::class, 'execute', ['GET'], null);
+
+        // Without debug mode: the original message must not leak.
+        $wrapper = new RestWrapper($action);
+        $error = $wrapper->execute(new \WP_REST_Request())->get_data()['error'] ?? [];
+
+        $this->assertSame('Something went wrong. Please try again.', $error['message']);
+        $this->assertStringNotContainsString(
+            'My custom exception.',
+            json_encode($error) ?: '',
+            'Original exception message must not leak anywhere in the response when debug=false.'
+        );
+
+        // Debug mode: the raw message comes through.
+        $debugError = (new RestWrapper($action, true))
+            ->execute(new \WP_REST_Request())
+            ->get_data()['error'] ?? [];
+        $this->assertSame('My custom exception.', $debugError['message']);
     }
 
     /**

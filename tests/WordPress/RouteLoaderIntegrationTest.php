@@ -8,7 +8,9 @@
 
 namespace Dbout\WpRestApi\Tests\WordPress;
 
+use Dbout\WpRestApi\ErrorFormat\ProblemJsonFormatter;
 use Dbout\WpRestApi\RouteLoader;
+use Dbout\WpRestApi\RouteLoaderOptions;
 
 class RouteLoaderIntegrationTest extends \WP_UnitTestCase
 {
@@ -86,5 +88,28 @@ class RouteLoaderIntegrationTest extends \WP_UnitTestCase
         $error = $response->get_data()['error'] ?? null;
         $this->assertSame('not-found', $error['code']);
         $this->assertSame('Resource not found.', $error['message']);
+    }
+
+    public function testProblemJsonFormatterIsUsedWhenConfigured(): void
+    {
+        $options = new RouteLoaderOptions(errorFormatter: new ProblemJsonFormatter());
+        (new RouteLoader(self::FIXTURES_DIR . '/ProblemJsonRoute', $options))->register();
+        do_action('rest_api_init');
+
+        $response = rest_do_request(new \WP_REST_Request('GET', '/integration/v1/problem'));
+
+        $this->assertSame(404, $response->get_status());
+        $this->assertSame(
+            ProblemJsonFormatter::CONTENT_TYPE,
+            $response->get_headers()['Content-Type'] ?? null,
+            'application/problem+json header MUST be set when ProblemJsonFormatter is used.'
+        );
+
+        $body = $response->get_data();
+        $this->assertSame('about:blank', $body['type']);
+        $this->assertSame('not-found', $body['title']);
+        $this->assertSame(404, $body['status']);
+        $this->assertSame('Problem not found.', $body['detail']);
+        $this->assertArrayNotHasKey('error', $body);
     }
 }

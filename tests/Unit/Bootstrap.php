@@ -39,7 +39,10 @@ class Bootstrap
     protected function initConstants(): void
     {
         define('ABSPATH', sprintf('%s/', $this->wpDirectory));
-        define('WP_DEBUG', false);
+        // Enabled so the RestWrapper debug-mode tests can exercise the
+        // WP_DEBUG + RouteLoaderOptions::$debug AND-gate. Individual tests
+        // can stub isWpDebugEnabled() to simulate WP_DEBUG=false.
+        define('WP_DEBUG', true);
         define('WP_CONTENT_DIR', '/');
         define('WP_DEBUG_LOG', false);
         define('WP_PLUGIN_DIR', './');

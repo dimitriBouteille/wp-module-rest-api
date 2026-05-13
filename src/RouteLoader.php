@@ -8,6 +8,7 @@
 
 namespace Dbout\WpRestApi;
 
+use Dbout\WpRestApi\ErrorFormat\DefaultFormatter;
 use Dbout\WpRestApi\Exceptions\ApiException;
 use Dbout\WpRestApi\Helpers\FileLocator;
 use Dbout\WpRestApi\Loaders\AnnotationDirectoryLoader;
@@ -270,15 +271,18 @@ class RouteLoader
     protected function buildRouteArgs(Route $route): array
     {
         $actions = [];
-        $isDebug = $this->options?->debug;
-        if ($isDebug === null) {
-            $isDebug = false;
-        }
+        $options = $this->options ?? new RouteLoaderOptions();
+        $isDebug = $options->debug;
+        $errorFormatter = $options->errorFormatter ?? new DefaultFormatter();
 
         foreach ($route->actions as $action) {
             $actions[] = [
                 'methods' => $action->methods,
-                'callback' => [new RestWrapper($action, $isDebug), 'execute'],
+                'callback' => [new RestWrapper(
+                    $action,
+                    $isDebug,
+                    $errorFormatter,
+                ), 'execute'],
                 'permission_callback' => [new PermissionWrapper($action), 'execute'],
                 'args' => [],
             ];
