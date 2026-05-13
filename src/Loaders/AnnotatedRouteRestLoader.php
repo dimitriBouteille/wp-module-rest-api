@@ -177,8 +177,8 @@ class AnnotatedRouteRestLoader implements InterfaceLoader
 
     /**
      * @param string|null $phpType
-     * @return string|null
      * @throws \ReflectionException
+     * @return string|null
      */
     protected function inferWpType(?string $phpType): ?string
     {
