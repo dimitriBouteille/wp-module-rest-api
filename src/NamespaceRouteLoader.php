@@ -77,8 +77,8 @@ class NamespaceRouteLoader extends RouteLoader
     }
 
     /**
-     * @return Route[]
      * @throws \ReflectionException|ApiException
+     * @return Route[]
      */
     protected function findRoutes(): array
     {
