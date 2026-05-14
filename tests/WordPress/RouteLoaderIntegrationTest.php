@@ -9,6 +9,7 @@
 namespace Dbout\WpRestApi\Tests\WordPress;
 
 use Dbout\WpRestApi\ErrorFormat\ProblemJsonFormatter;
+use Dbout\WpRestApi\NamespaceRouteLoader;
 use Dbout\WpRestApi\RouteLoader;
 use Dbout\WpRestApi\RouteLoaderOptions;
 
@@ -108,6 +109,19 @@ class RouteLoaderIntegrationTest extends \WP_UnitTestCase
 
         $this->assertSame(200, $ok->get_status());
         $this->assertSame(['id' => 42], $ok->get_data());
+    }
+
+    public function testNamespaceLoaderRegistersRoutesViaComposer(): void
+    {
+        (new NamespaceRouteLoader(
+            'Dbout\\WpRestApi\\Tests\\WordPress\\fixtures\\NamespaceLoaderRoute\\',
+        ))->register();
+        do_action('rest_api_init');
+
+        $response = rest_do_request(new \WP_REST_Request('GET', '/integration/v1/namespace-ping'));
+
+        $this->assertSame(200, $response->get_status());
+        $this->assertSame(['source' => 'namespace-loader'], $response->get_data());
     }
 
     public function testRequiredParamIsHonoredOnPostJsonBody(): void
