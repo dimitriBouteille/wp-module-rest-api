@@ -8,6 +8,7 @@
 
 namespace Dbout\WpRestApi\Wrappers;
 
+use Dbout\WpRestApi\Attributes\Param;
 use Dbout\WpRestApi\Permissions\PermissionInterface;
 
 /**
@@ -41,8 +42,13 @@ final class ReflectionCache
         $descriptors = [];
         foreach ($reflection->getParameters() as $parameter) {
             $type = $parameter->getType();
+            $paramAttribute = $parameter->getAttributes(Param::class)[0] ?? null;
+            $paramInstance = $paramAttribute?->newInstance();
             $descriptors[] = new ParameterDescriptor(
                 name: $parameter->getName(),
+                requestName: $paramInstance instanceof Param && $paramInstance->name !== null
+                    ? $paramInstance->name
+                    : $parameter->getName(),
                 position: $parameter->getPosition(),
                 typeName: $type instanceof \ReflectionNamedType ? $type->getName() : null,
             );
