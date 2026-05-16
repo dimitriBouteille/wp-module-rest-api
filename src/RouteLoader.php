@@ -22,6 +22,11 @@ class RouteLoader
     /**
      * @param string|array<string> $routeDirectory
      * @param RouteLoaderOptions|null $options
+     *
+     * @deprecated Directory-based discovery relies on a custom token parser
+     *             that has known edge cases (anonymous classes, block-style
+     *             namespaces). Prefer {@see NamespaceRouteLoader} which uses
+     *             Composer's PSR-4 mapping as the source of truth.
      */
     public function __construct(
         protected string|array $routeDirectory,
