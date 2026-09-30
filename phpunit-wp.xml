@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit cacheResult="false"
+         stopOnError="true"
+         bootstrap="./tests/WordPress/Bootstrap.php"
+         colors="true"
+         backupGlobals="false">
+    <testsuites>
+        <testsuite name="WordPress">
+            <directory>tests/WordPress/</directory>
+            <exclude>tests/WordPress/Bootstrap.php</exclude>
+            <exclude>tests/WordPress/wp-tests-config.php</exclude>
+            <exclude>tests/WordPress/fixtures</exclude>
+        </testsuite>
+    </testsuites>
+</phpunit>
