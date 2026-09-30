@@ -113,6 +113,24 @@ class RouteLoaderTest extends TestCase
     }
 
     /**
+     * @covers ::getRoutes
+     * @covers ::hydrateRoutes
+     */
+    public function testCachePayloadWithEmptyPathFallsBack(): void
+    {
+        $cache = new ArrayCachePool();
+        $item = $cache->getItem(RouteLoaderOptions::DEFAULT_CACHE_KEY);
+        $item->set(json_encode([['namespace' => 'foo/v1', 'path' => '', 'actions' => []]]));
+        $cache->save($item);
+
+        $loader = new RouteLoader(self::FIXTURE_DIR, new RouteLoaderOptions(cache: $cache));
+        $routes = $this->invokeGetRoutes($loader);
+
+        $this->assertCount(1, $routes);
+        $this->assertSame('test-cache/v1', $routes[0]->namespace);
+    }
+
+    /**
      * @covers ::dehydrateRoutes
      */
     public function testClosurePermissionCallbackSkipsCache(): void

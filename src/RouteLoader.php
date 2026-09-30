@@ -118,7 +118,11 @@ class RouteLoader
                 );
             }
 
-            $routes[] = new Route($namespace, $path, $actions);
+            try {
+                $routes[] = new Route($namespace, $path, $actions);
+            } catch (ApiException) {
+                return null;
+            }
         }
 
         return $routes;

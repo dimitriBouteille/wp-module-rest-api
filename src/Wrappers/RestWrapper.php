@@ -122,7 +122,7 @@ class RestWrapper
     protected function collectDependencies(string $className, string $methodName, \WP_REST_Request $request): array
     {
         $dependencies = [];
-        $requestClass = get_class($request);
+        $requestClass = $request::class;
 
         foreach (ReflectionCache::parameters($className, $methodName) as $descriptor) {
             if ($descriptor->typeName === null) {
