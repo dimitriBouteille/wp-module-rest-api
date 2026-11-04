@@ -143,7 +143,12 @@ Stack traces are added to error responses only when both `debug` and the `WP_DEB
 
 ## Documentation
 
-- The full documentation is in the [wiki](https://github.com/dimitriBouteille/wp-module-rest-api/wiki).
+- [Getting started](docs/getting-started.md)
+- [Routes and actions](docs/routes.md)
+- [Request parameters](docs/parameters.md)
+- [Permissions](docs/permissions.md)
+- [Error handling](docs/error-handling.md)
+- [Configuration](docs/configuration.md)
 - Upgrading from 1.x? Read the [upgrade guide](UPGRADE.md).
 - To learn how the WordPress REST API itself works, read the [official documentation](https://developer.wordpress.org/rest-api/).
 
