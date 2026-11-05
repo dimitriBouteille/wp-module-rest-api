@@ -1,6 +1,6 @@
 # WordPress Rest API
 
-[![GitHub Release](https://img.shields.io/github/v/release/dimitriBouteille/wp-module-rest-api)](https://github.com/dimitriBouteille/wp-module-rest-api/releases) [![tests](https://img.shields.io/github/actions/workflow/status/dimitriBouteille/wp-module-rest-api/tests.yml?label=tests)](https://github.com/dimitriBouteille/wp-module-rest-api/actions/workflows/tests.yml) [![Packagist Downloads](https://img.shields.io/packagist/dt/dbout/wp-module-rest-api?color=yellow)](https://packagist.org/packages/dbout/wp-module-rest-api)
+[![GitHub Release](https://img.shields.io/github/v/release/dimitriBouteille/wp-module-rest-api)](https://github.com/dimitriBouteille/wp-module-rest-api/releases) [![tests](https://img.shields.io/github/actions/workflow/status/dimitriBouteille/wp-module-rest-api/tests.yml?label=tests)](https://github.com/dimitriBouteille/wp-module-rest-api/actions/workflows/tests.yml) [![PHP](https://img.shields.io/packagist/dependency-v/dbout/wp-module-rest-api/php)](https://packagist.org/packages/dbout/wp-module-rest-api) [![Packagist Downloads](https://img.shields.io/packagist/dt/dbout/wp-module-rest-api?color=yellow)](https://packagist.org/packages/dbout/wp-module-rest-api)
 
 Declare your [WordPress REST API](https://developer.wordpress.org/rest-api/) routes with **PHP 8 attributes**, in plain classes, instead of piling up `register_rest_route()` calls.
 
