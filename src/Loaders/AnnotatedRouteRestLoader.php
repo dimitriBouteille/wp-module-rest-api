@@ -223,13 +223,16 @@ class AnnotatedRouteRestLoader implements InterfaceLoader
     }
 
     /**
+     * `int` and `float` have no sanitizer: WordPress then uses
+     * rest_parse_request_arg(), which validates and casts the value from the
+     * inferred schema type. absint() is not used, it turns -5 into 5.
+     *
      * @param string|null $phpType
      * @return string|null
      */
     protected function inferSanitizeCallback(?string $phpType): ?string
     {
         return match ($phpType) {
-            'int' => 'absint',
             'string' => 'sanitize_text_field',
             'bool' => 'rest_sanitize_boolean',
             default => null,

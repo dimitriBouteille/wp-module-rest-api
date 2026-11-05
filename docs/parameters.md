@@ -46,7 +46,7 @@ When `type` or `sanitizeCallback` are not set, they are inferred from the PHP ty
 
 | PHP type     | `type`                | `sanitizeCallback`      |
 |--------------|-----------------------|-------------------------|
-| `int`        | `integer`             | `absint`                |
+| `int`        | `integer`             | none                    |
 | `float`      | `number`              | none                    |
 | `bool`       | `boolean`             | `rest_sanitize_boolean` |
 | `string`     | `string`              | `sanitize_text_field`   |
@@ -55,7 +55,9 @@ When `type` or `sanitizeCallback` are not set, they are inferred from the PHP ty
 
 A nullable type (`?int`) also accepts `null`.
 
-> ⚠️ `absint` turns negative numbers into positive ones. If an `int` parameter can be negative, set your own `sanitizeCallback`, for example `sanitizeCallback: 'intval'`.
+Without `sanitizeCallback`, WordPress validates and casts the value from `type`: `?offset=-5` gives `-5`, and `?offset=abc` is rejected with a `400` error and the `rest_invalid_param` code.
+
+To accept only positive integers, set it explicitly: `#[Param(sanitizeCallback: 'absint')]`. Note that `absint` turns `-5` into `5` and `abc` into `0`, it does not reject them.
 
 ## Backed enums
 
