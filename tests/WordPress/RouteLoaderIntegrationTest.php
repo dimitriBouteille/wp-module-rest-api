@@ -104,11 +104,62 @@ class RouteLoaderIntegrationTest extends \WP_UnitTestCase
         );
 
         $request = new \WP_REST_Request('GET', '/integration/v1/articles');
-        $request->set_param('id', '42'); // strings from query strings, absint coerces.
+        $request->set_param('id', '42'); // strings from query strings, cast from the schema type.
         $ok = rest_do_request($request);
 
         $this->assertSame(200, $ok->get_status());
         $this->assertSame(['id' => 42], $ok->get_data());
+    }
+
+    public function testMissingOptionalQueryParameterDoesNotShiftArguments(): void
+    {
+        (new RouteLoader(self::FIXTURES_DIR . '/InjectionRoute'))->register();
+        do_action('rest_api_init');
+
+        $request = new \WP_REST_Request('GET', '/integration/v1/search');
+        $request->set_query_params(['format' => 'xml', 'exact' => 'false']);
+        $response = rest_do_request($request);
+
+        $this->assertSame(200, $response->get_status());
+        $this->assertSame(
+            ['query' => '', 'format' => 'xml', 'exact' => false],
+            $response->get_data(),
+            'A missing optional parameter MUST keep its default value without shifting the next arguments.'
+        );
+    }
+
+    public function testArrayReturnAndWpErrorStatusThroughRestServer(): void
+    {
+        (new RouteLoader(self::FIXTURES_DIR . '/ReturnValueRoute'))->register();
+        do_action('rest_api_init');
+
+        $response = rest_do_request(new \WP_REST_Request('GET', '/integration/v1/return-values'));
+        $this->assertSame(200, $response->get_status());
+        $this->assertSame(['ok' => true], $response->get_data(), 'An array returned by an action MUST be sent as the response body.');
+
+        $response = rest_do_request(new \WP_REST_Request('DELETE', '/integration/v1/return-values'));
+        $this->assertSame(404, $response->get_status(), 'The status of a returned WP_Error MUST be honored.');
+        $this->assertSame('not-found', $response->get_data()['error']['code'] ?? null);
+    }
+
+    public function testNegativeIntParamIsKept(): void
+    {
+        (new RouteLoader(self::FIXTURES_DIR . '/IntParamRoute'))->register();
+        do_action('rest_api_init');
+
+        $request = new \WP_REST_Request('GET', '/integration/v1/offsets');
+        $request->set_query_params(['offset' => '-5']);
+        $response = rest_do_request($request);
+
+        $this->assertSame(200, $response->get_status());
+        $this->assertSame(['offset' => -5], $response->get_data(), 'A negative int MUST NOT be turned into a positive one.');
+
+        $request = new \WP_REST_Request('GET', '/integration/v1/offsets');
+        $request->set_query_params(['offset' => 'abc']);
+        $response = rest_do_request($request);
+
+        $this->assertSame(400, $response->get_status(), 'A non-numeric value MUST be rejected by WordPress.');
+        $this->assertSame('rest_invalid_param', $response->get_data()['code'] ?? null);
     }
 
     public function testNamespaceLoaderRegistersRoutesViaComposer(): void

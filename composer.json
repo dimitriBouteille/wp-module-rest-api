@@ -1,7 +1,7 @@
 {
   "name": "dbout/wp-module-rest-api",
   "description": "Quickly add routes to the WordPress Rest API.",
-  "type": "package",
+  "type": "library",
   "license": "MIT",
   "authors": [
     {

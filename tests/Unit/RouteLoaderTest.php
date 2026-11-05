@@ -189,7 +189,7 @@ class RouteLoaderTest extends TestCase
 
         $this->assertTrue($compiled['id']['required']);
         $this->assertSame('integer', $compiled['id']['type']);
-        $this->assertSame('absint', $compiled['id']['sanitize_callback']);
+        $this->assertArrayNotHasKey('sanitize_callback', $compiled['id'], 'int params rely on the WordPress schema cast, not absint.');
         $this->assertSame('Item identifier', $compiled['id']['description']);
 
         $this->assertSame(10, $compiled['perPage']['default']);

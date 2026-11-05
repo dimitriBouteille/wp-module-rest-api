@@ -10,7 +10,11 @@ namespace Dbout\WpRestApi\Tests\Unit\Wrappers;
 
 use Dbout\WpRestApi\ErrorFormat\ProblemJsonFormatter;
 use Dbout\WpRestApi\RouteAction;
+use Dbout\WpRestApi\Tests\Unit\fixtures\IntPriority;
 use Dbout\WpRestApi\Tests\Unit\fixtures\RouteReturningResponse;
+use Dbout\WpRestApi\Tests\Unit\fixtures\RouteWithInjectionCases;
+use Dbout\WpRestApi\Tests\Unit\fixtures\RouteWithReturnValues;
+use Dbout\WpRestApi\Tests\Unit\fixtures\StringStatus;
 use Dbout\WpRestApi\Tests\Unit\fixtures\RouteReturningWpError;
 use Dbout\WpRestApi\Tests\Unit\fixtures\RouteWithException;
 use Dbout\WpRestApi\Tests\Unit\fixtures\RouteWithFatalError;
@@ -274,6 +278,251 @@ class RestWrapperTest extends TestCase
             ->execute(new \WP_REST_Request())
             ->get_data()['error'] ?? [];
         $this->assertSame('My custom exception.', $debugError['message']);
+    }
+
+    /**
+     * @covers ::collectDependencies
+     */
+    public function testMissingOptionalArgumentDoesNotShiftNextOnes(): void
+    {
+        $response = $this->executeInjectionCase('optional', ['format' => 'xml']);
+
+        $this->assertSame(200, $response->get_status());
+        $this->assertSame(['search' => '', 'format' => 'xml'], $response->get_data());
+    }
+
+    /**
+     * @covers ::collectDependencies
+     */
+    public function testMissingRequiredArgumentReturns400(): void
+    {
+        $response = $this->executeInjectionCase('required', []);
+
+        $this->assertSame(400, $response->get_status());
+        $error = $response->get_data()['error'] ?? [];
+        $this->assertSame('missing-parameter', $error['code']);
+        $this->assertSame(['parameter' => 'id'], $error['data']);
+    }
+
+    /**
+     * @covers ::collectDependencies
+     */
+    public function testMissingNullableArgumentReceivesNull(): void
+    {
+        $response = $this->executeInjectionCase('nullable', []);
+
+        $this->assertSame(200, $response->get_status());
+        $this->assertSame(['id' => null], $response->get_data());
+    }
+
+    /**
+     * @covers ::collectDependencies
+     * @covers ::castRequestArgument
+     */
+    public function testValidEnumValuesAreCast(): void
+    {
+        $response = $this->executeInjectionCase('enums', ['status' => 'draft', 'priority' => '2']);
+
+        $this->assertSame(200, $response->get_status());
+        $this->assertSame(
+            ['status' => StringStatus::Draft, 'priority' => IntPriority::High],
+            $response->get_data()
+        );
+    }
+
+    /**
+     * @param array<string, mixed> $params
+     * @param string $parameter
+     * @param array<int|string> $accepted
+     * @dataProvider providerInvalidEnumValues
+     * @covers ::collectDependencies
+     * @covers ::castRequestArgument
+     */
+    public function testInvalidEnumValueReturns400(array $params, string $parameter, array $accepted): void
+    {
+        $response = $this->executeInjectionCase('enums', $params);
+
+        $this->assertSame(400, $response->get_status());
+        $error = $response->get_data()['error'] ?? [];
+        $this->assertSame('invalid-parameter', $error['code']);
+        $this->assertSame(['parameter' => $parameter, 'accepted' => $accepted], $error['data']);
+    }
+
+    /**
+     * @return \Generator
+     */
+    public static function providerInvalidEnumValues(): \Generator
+    {
+        yield 'Unknown string value' => [['status' => 'archived'], 'status', ['draft', 'published']];
+        yield 'Unknown int value' => [['status' => 'draft', 'priority' => '9'], 'priority', [1, 2]];
+        yield 'Non-numeric value for an int enum' => [['status' => 'draft', 'priority' => 'abc'], 'priority', [1, 2]];
+        yield 'Array value' => [['status' => ['draft']], 'status', ['draft', 'published']];
+    }
+
+    /**
+     * @param mixed $value
+     * @param bool $expected
+     * @dataProvider providerBoolValues
+     * @covers ::castRequestArgument
+     */
+    public function testBoolCastFollowsRestSanitizeBoolean(mixed $value, bool $expected): void
+    {
+        $response = $this->executeInjectionCase('boolean', ['enabled' => $value]);
+
+        $this->assertSame(200, $response->get_status());
+        $this->assertSame(['enabled' => $expected], $response->get_data());
+    }
+
+    /**
+     * @return \Generator
+     */
+    public static function providerBoolValues(): \Generator
+    {
+        yield '"false"' => ['false', false];
+        yield '"FALSE"' => ['FALSE', false];
+        yield '"0"' => ['0', false];
+        yield 'empty string' => ['', false];
+        yield '"true"' => ['true', true];
+        yield '"1"' => ['1', true];
+        yield 'native false' => [false, false];
+        yield 'native true' => [true, true];
+    }
+
+    /**
+     * @covers ::collectDependencies
+     */
+    public function testRequestIsInjectedBetweenOtherArguments(): void
+    {
+        $response = $this->executeInjectionCase('requestInTheMiddle', ['id' => '7'], 'POST');
+
+        $this->assertSame(200, $response->get_status());
+        $this->assertSame(['id' => 7, 'method' => 'POST', 'sort' => 'asc'], $response->get_data());
+    }
+
+    /**
+     * @covers ::execute
+     * @covers ::toRestResponse
+     */
+    public function testArrayReturnIsWrapped(): void
+    {
+        $response = $this->executeReturnCase('arrayValue');
+
+        $this->assertInstanceOf(\WP_REST_Response::class, $response);
+        $this->assertSame(200, $response->get_status());
+        $this->assertSame(['ok' => true], $response->get_data());
+    }
+
+    /**
+     * @covers ::execute
+     * @covers ::toRestResponse
+     */
+    public function testJsonSerializableReturnIsWrapped(): void
+    {
+        $response = $this->executeReturnCase('jsonSerializable');
+
+        $this->assertSame(200, $response->get_status());
+        $this->assertInstanceOf(\JsonSerializable::class, $response->get_data());
+        $this->assertSame('{"id":18}', wp_json_encode($response->get_data()));
+    }
+
+    /**
+     * @covers ::execute
+     * @covers ::toRestResponse
+     */
+    public function testNullReturnIsWrapped(): void
+    {
+        $response = $this->executeReturnCase('nullValue');
+
+        $this->assertSame(200, $response->get_status());
+        $this->assertNull($response->get_data());
+    }
+
+    /**
+     * @covers ::execute
+     * @covers ::toRestResponse
+     * @covers ::onError
+     */
+    public function testUnserializableReturnReturns500(): void
+    {
+        $response = $this->executeReturnCase('closure');
+        $this->exceptionAsserts($response, 'Something went wrong. Please try again.', 500);
+
+        $response = $this->executeReturnCase('closure', debug: true);
+        $this->assertSame(500, $response->get_status());
+        $this->assertStringContainsString(
+            'RouteWithReturnValues::closure() returned a Closure',
+            $response->get_data()['error']['message'] ?? '',
+        );
+    }
+
+    /**
+     * @covers ::execute
+     * @covers ::onWpError
+     */
+    public function testWpErrorStatusIsHonored(): void
+    {
+        $response = $this->executeReturnCase('wpErrorNotFound');
+
+        $this->assertSame(404, $response->get_status());
+        $error = $response->get_data()['error'] ?? null;
+        $this->assertSame('not-found', $error['code']);
+        $this->assertSame('Document not found.', $error['message']);
+        $this->assertSame(['id' => 18], $error['data'], 'The status must not be sent in the error data.');
+
+        $this->assertSame(403, $this->executeReturnCase('wpErrorStringStatus')->get_status());
+    }
+
+    /**
+     * @param string $method
+     * @return void
+     * @dataProvider providerWpErrorInvalidStatus
+     * @covers ::execute
+     * @covers ::onWpError
+     */
+    public function testWpErrorInvalidStatusFallsBackTo500(string $method): void
+    {
+        $response = $this->executeReturnCase($method);
+
+        $this->assertSame(500, $response->get_status());
+        $this->assertSame([], $response->get_data()['error']['data'] ?? null);
+    }
+
+    /**
+     * @return \Generator
+     */
+    public static function providerWpErrorInvalidStatus(): \Generator
+    {
+        yield 'Success status' => ['wpErrorSuccessStatus'];
+        yield 'Not a number' => ['wpErrorInvalidStatus'];
+    }
+
+    /**
+     * @param string $method
+     * @param bool $debug
+     * @return \WP_REST_Response
+     */
+    protected function executeReturnCase(string $method, bool $debug = false): \WP_REST_Response
+    {
+        $action = new RouteAction(RouteWithReturnValues::class, $method, ['GET'], null);
+
+        return (new RestWrapper($action, $debug))->execute(new \WP_REST_Request());
+    }
+
+    /**
+     * @param string $method
+     * @param array<string, mixed> $params
+     * @param string $httpMethod
+     * @return \WP_REST_Response
+     */
+    protected function executeInjectionCase(string $method, array $params, string $httpMethod = 'GET'): \WP_REST_Response
+    {
+        $action = new RouteAction(RouteWithInjectionCases::class, $method, [$httpMethod], null);
+        $request = new \WP_REST_Request($httpMethod, '/dummy');
+        foreach ($params as $key => $value) {
+            $request->set_param($key, $value);
+        }
+
+        return (new RestWrapper($action))->execute($request);
     }
 
     /**

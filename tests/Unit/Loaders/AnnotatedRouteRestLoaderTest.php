@@ -13,6 +13,7 @@ use Dbout\WpRestApi\ParamSpec;
 use Dbout\WpRestApi\Route;
 use Dbout\WpRestApi\Tests\Unit\fixtures\Loaders\SortDirection;
 use Dbout\WpRestApi\Tests\Unit\fixtures\Loaders\WithEnumParam\RouteWithEnumParam;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Loaders\WithIntParams\RouteWithIntParams;
 use Dbout\WpRestApi\Tests\Unit\fixtures\Loaders\WithParams\RouteWithParams;
 use PHPUnit\Framework\TestCase;
 
@@ -48,13 +49,11 @@ class AnnotatedRouteRestLoaderTest extends TestCase
             'type' => 'integer',
             'required' => true,
             'description' => 'Item identifier',
-            'sanitize_callback' => 'absint',
         ], $byRequestName['id']->args);
 
         $this->assertSame([
             'type' => 'integer',
             'default' => 10,
-            'sanitize_callback' => 'absint',
         ], $byRequestName['perPage']->args);
 
         $this->assertSame(
@@ -86,5 +85,32 @@ class AnnotatedRouteRestLoaderTest extends TestCase
             'BackedEnum cases must be unrolled to their backing values.'
         );
         $this->assertTrue($spec->args['required']);
+    }
+
+    /**
+     * @covers ::compileParam
+     * @covers ::inferSanitizeCallback
+     */
+    public function testIntParamHasNoAbsintSanitizer(): void
+    {
+        $route = (new AnnotatedRouteRestLoader())->load(RouteWithIntParams::class);
+
+        $this->assertInstanceOf(Route::class, $route);
+        $byRequestName = [];
+        foreach ($route->actions[0]->params as $spec) {
+            $byRequestName[$spec->requestName] = $spec->args;
+        }
+
+        $this->assertSame('integer', $byRequestName['offset']['type']);
+        $this->assertArrayNotHasKey(
+            'sanitize_callback',
+            $byRequestName['offset'],
+            'An int param MUST NOT get absint: WordPress casts it from the schema type and keeps negative values.'
+        );
+        $this->assertSame(
+            'absint',
+            $byRequestName['page']['sanitize_callback'] ?? null,
+            'An explicit sanitizeCallback MUST still be used.'
+        );
     }
 }

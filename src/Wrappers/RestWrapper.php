@@ -42,16 +42,48 @@ class RestWrapper
             $methodName = $this->action->methodName;
             $dependencies = $this->collectDependencies($className, $methodName, $request);
             $instance = new $className();
-            $response = $instance->{$methodName}(...$dependencies);
+            $result = $instance->{$methodName}(...$dependencies);
+
+            if ($result instanceof \WP_Error) {
+                return $this->onWpError($result);
+            }
+
+            return $this->toRestResponse($result);
         } catch (\Throwable $exception) {
             return $this->onError($exception);
         }
+    }
 
-        if (is_wp_error($response)) {
-            return $this->onWpError($response);
+    /**
+     * Normalizes the value returned by an action, as WordPress does for a
+     * plain REST callback: arrays, scalars, null and JsonSerializable objects
+     * become the body of a 200 response.
+     *
+     * @param mixed $result
+     * @throws \UnexpectedValueException When the value cannot be sent as JSON.
+     * @return \WP_REST_Response
+     */
+    protected function toRestResponse(mixed $result): \WP_REST_Response
+    {
+        if (is_resource($result) || $result instanceof \Closure) {
+            throw new \UnexpectedValueException(sprintf(
+                'The action %s::%s() returned a %s, which cannot be sent as JSON. Return a \WP_REST_Response, an array, a scalar or a JsonSerializable object.',
+                $this->action->className,
+                $this->action->methodName,
+                get_debug_type($result),
+            ));
         }
 
-        return $response;
+        // Same rules as rest_ensure_response(), WP_Error being handled before.
+        if ($result instanceof \WP_REST_Response) {
+            return $result;
+        }
+
+        if ($result instanceof \WP_HTTP_Response) {
+            return new \WP_REST_Response($result->get_data(), $result->get_status(), $result->get_headers());
+        }
+
+        return new \WP_REST_Response($result);
     }
 
     /**
@@ -102,10 +134,18 @@ class RestWrapper
             break;
         }
 
+        // WordPress convention: ['status' => 404] sets the HTTP status code.
+        $status = filter_var(
+            $data['status'] ?? null,
+            FILTER_VALIDATE_INT,
+            ['options' => ['min_range' => 400, 'max_range' => 599]],
+        );
+        unset($data['status']);
+
         $exception = new RouteException(
             message: $message,
             errorCode: $code ?? self::DEFAULT_EXCEPTION_CODE,
-            httpStatusCode: self::DEFAULT_EXCEPTION_HTTP_CODE,
+            httpStatusCode: is_int($status) ? $status : self::DEFAULT_EXCEPTION_HTTP_CODE,
             additionalData: $data,
         );
 
@@ -116,8 +156,16 @@ class RestWrapper
      * @param class-string $className
      * @param string $methodName
      * @param \WP_REST_Request $request
+     * Builds the arguments of the action, keyed by parameter name so they are
+     * passed as named arguments: a parameter missing from the request keeps its
+     * default value instead of shifting the following arguments.
+     *
+     * @param class-string $className
+     * @param string $methodName
+     * @param \WP_REST_Request $request
      * @throws \ReflectionException
-     * @return array<int, mixed>
+     * @throws RouteException When a required parameter is missing or an enum value is invalid.
+     * @return array<string, mixed>
      */
     protected function collectDependencies(string $className, string $methodName, \WP_REST_Request $request): array
     {
@@ -125,21 +173,51 @@ class RestWrapper
         $requestClass = $request::class;
 
         foreach (ReflectionCache::parameters($className, $methodName) as $descriptor) {
-            if ($descriptor->typeName === null) {
+            if ($descriptor->typeName === null || $descriptor->isVariadic) {
                 continue;
             }
 
             if ($descriptor->typeName === $requestClass) {
-                $dependencies[$descriptor->position] = $request;
+                $dependencies[$descriptor->name] = $request;
                 continue;
             }
 
             if (!$request->has_param($descriptor->requestName)) {
-                continue;
+                if ($descriptor->hasDefaultValue) {
+                    continue;
+                }
+
+                if ($descriptor->allowsNull) {
+                    $dependencies[$descriptor->name] = null;
+                    continue;
+                }
+
+                throw new RouteException(
+                    message: sprintf('Missing parameter: %s.', $descriptor->requestName),
+                    errorCode: 'missing-parameter',
+                    httpStatusCode: 400,
+                    additionalData: ['parameter' => $descriptor->requestName],
+                );
             }
 
-            $value = $request->get_param($descriptor->requestName);
-            $dependencies[$descriptor->position] = $this->castRequestArgument($descriptor->typeName, $value);
+            $rawValue = $request->get_param($descriptor->requestName);
+            $value = $this->castRequestArgument($descriptor->typeName, $rawValue);
+            if ($value === null && $rawValue !== null && is_subclass_of($descriptor->typeName, \BackedEnum::class)) {
+                throw new RouteException(
+                    message: sprintf('Invalid parameter: %s.', $descriptor->requestName),
+                    errorCode: 'invalid-parameter',
+                    httpStatusCode: 400,
+                    additionalData: [
+                        'parameter' => $descriptor->requestName,
+                        'accepted' => array_map(
+                            static fn (\BackedEnum $case): int|string => $case->value,
+                            $descriptor->typeName::cases(),
+                        ),
+                    ],
+                );
+            }
+
+            $dependencies[$descriptor->name] = $value;
         }
 
         return $dependencies;
@@ -148,7 +226,7 @@ class RestWrapper
     /**
      * @param string $typeName
      * @param mixed $value
-     * @return mixed
+     * @return mixed Backed enums return null when the value matches no case.
      */
     protected function castRequestArgument(string $typeName, mixed $value): mixed
     {
@@ -157,14 +235,24 @@ class RestWrapper
         }
 
         if (is_subclass_of($typeName, \BackedEnum::class)) {
-            return $typeName::from($value);
+            if (!is_int($value) && !is_string($value)) {
+                return null;
+            }
+
+            try {
+                return $typeName::tryFrom($value);
+            } catch (\TypeError) {
+                // A non-numeric string for an int-backed enum.
+                return null;
+            }
         }
 
         return match ($typeName) {
             'int' => (int)$value,
             'string' => (string)$value,
             'float' => (float)$value,
-            'bool' => (bool)$value,
+            // rest_sanitize_boolean() only changes strings ('false', '0' → false).
+            'bool' => is_string($value) ? rest_sanitize_boolean($value) : (bool)$value,
             default => $value,
         };
     }

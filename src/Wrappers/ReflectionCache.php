@@ -51,6 +51,9 @@ final class ReflectionCache
                     : $parameter->getName(),
                 position: $parameter->getPosition(),
                 typeName: $type instanceof \ReflectionNamedType ? $type->getName() : null,
+                hasDefaultValue: $parameter->isDefaultValueAvailable(),
+                allowsNull: $type === null || $type->allowsNull(),
+                isVariadic: $parameter->isVariadic(),
             );
         }
 
