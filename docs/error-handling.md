@@ -94,10 +94,10 @@ During development, enable [debug mode](configuration.md#debug) to see the real 
 
 ## Returning a `WP_Error`
 
-An action can also return a `\WP_Error`. Only its first error is sent, and the status code is `500`:
+An action can also return a `\WP_Error`. Only its first error is sent. As in WordPress core, the `status` data sets the status code:
 
 ```php
-return new \WP_Error('invalid-email', 'The email is invalid.');
+return new \WP_Error('invalid-email', 'The email is invalid.', ['status' => 400]);
 ```
 
 ```json
@@ -110,7 +110,10 @@ return new \WP_Error('invalid-email', 'The email is invalid.');
 }
 ```
 
-> 💡 Prefer throwing a `RouteException`: you control the status code and can send several messages through `additionalData`.
+- `status` must be an integer between `400` and `599`, otherwise the status code is `500`.
+- `status` is not sent to the client; the other data is sent in `data`.
+
+> 💡 To send several messages, throw a `RouteException` with `additionalData`:
 
 ```php
 throw new RouteException(

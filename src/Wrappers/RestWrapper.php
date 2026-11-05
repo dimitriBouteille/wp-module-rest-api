@@ -42,16 +42,48 @@ class RestWrapper
             $methodName = $this->action->methodName;
             $dependencies = $this->collectDependencies($className, $methodName, $request);
             $instance = new $className();
-            $response = $instance->{$methodName}(...$dependencies);
+            $result = $instance->{$methodName}(...$dependencies);
+
+            if ($result instanceof \WP_Error) {
+                return $this->onWpError($result);
+            }
+
+            return $this->toRestResponse($result);
         } catch (\Throwable $exception) {
             return $this->onError($exception);
         }
+    }
 
-        if (is_wp_error($response)) {
-            return $this->onWpError($response);
+    /**
+     * Normalizes the value returned by an action, as WordPress does for a
+     * plain REST callback: arrays, scalars, null and JsonSerializable objects
+     * become the body of a 200 response.
+     *
+     * @param mixed $result
+     * @throws \UnexpectedValueException When the value cannot be sent as JSON.
+     * @return \WP_REST_Response
+     */
+    protected function toRestResponse(mixed $result): \WP_REST_Response
+    {
+        if (is_resource($result) || $result instanceof \Closure) {
+            throw new \UnexpectedValueException(sprintf(
+                'The action %s::%s() returned a %s, which cannot be sent as JSON. Return a \WP_REST_Response, an array, a scalar or a JsonSerializable object.',
+                $this->action->className,
+                $this->action->methodName,
+                get_debug_type($result),
+            ));
         }
 
-        return $response;
+        // Same rules as rest_ensure_response(), WP_Error being handled before.
+        if ($result instanceof \WP_REST_Response) {
+            return $result;
+        }
+
+        if ($result instanceof \WP_HTTP_Response) {
+            return new \WP_REST_Response($result->get_data(), $result->get_status(), $result->get_headers());
+        }
+
+        return new \WP_REST_Response($result);
     }
 
     /**
@@ -102,10 +134,18 @@ class RestWrapper
             break;
         }
 
+        // WordPress convention: ['status' => 404] sets the HTTP status code.
+        $status = filter_var(
+            $data['status'] ?? null,
+            FILTER_VALIDATE_INT,
+            ['options' => ['min_range' => 400, 'max_range' => 599]],
+        );
+        unset($data['status']);
+
         $exception = new RouteException(
             message: $message,
             errorCode: $code ?? self::DEFAULT_EXCEPTION_CODE,
-            httpStatusCode: self::DEFAULT_EXCEPTION_HTTP_CODE,
+            httpStatusCode: is_int($status) ? $status : self::DEFAULT_EXCEPTION_HTTP_CODE,
             additionalData: $data,
         );
 
