@@ -116,8 +116,16 @@ class RestWrapper
      * @param class-string $className
      * @param string $methodName
      * @param \WP_REST_Request $request
+     * Builds the arguments of the action, keyed by parameter name so they are
+     * passed as named arguments: a parameter missing from the request keeps its
+     * default value instead of shifting the following arguments.
+     *
+     * @param class-string $className
+     * @param string $methodName
+     * @param \WP_REST_Request $request
      * @throws \ReflectionException
-     * @return array<int, mixed>
+     * @throws RouteException When a required parameter is missing or an enum value is invalid.
+     * @return array<string, mixed>
      */
     protected function collectDependencies(string $className, string $methodName, \WP_REST_Request $request): array
     {
@@ -125,21 +133,51 @@ class RestWrapper
         $requestClass = $request::class;
 
         foreach (ReflectionCache::parameters($className, $methodName) as $descriptor) {
-            if ($descriptor->typeName === null) {
+            if ($descriptor->typeName === null || $descriptor->isVariadic) {
                 continue;
             }
 
             if ($descriptor->typeName === $requestClass) {
-                $dependencies[$descriptor->position] = $request;
+                $dependencies[$descriptor->name] = $request;
                 continue;
             }
 
             if (!$request->has_param($descriptor->requestName)) {
-                continue;
+                if ($descriptor->hasDefaultValue) {
+                    continue;
+                }
+
+                if ($descriptor->allowsNull) {
+                    $dependencies[$descriptor->name] = null;
+                    continue;
+                }
+
+                throw new RouteException(
+                    message: sprintf('Missing parameter: %s.', $descriptor->requestName),
+                    errorCode: 'missing-parameter',
+                    httpStatusCode: 400,
+                    additionalData: ['parameter' => $descriptor->requestName],
+                );
             }
 
-            $value = $request->get_param($descriptor->requestName);
-            $dependencies[$descriptor->position] = $this->castRequestArgument($descriptor->typeName, $value);
+            $rawValue = $request->get_param($descriptor->requestName);
+            $value = $this->castRequestArgument($descriptor->typeName, $rawValue);
+            if ($value === null && $rawValue !== null && is_subclass_of($descriptor->typeName, \BackedEnum::class)) {
+                throw new RouteException(
+                    message: sprintf('Invalid parameter: %s.', $descriptor->requestName),
+                    errorCode: 'invalid-parameter',
+                    httpStatusCode: 400,
+                    additionalData: [
+                        'parameter' => $descriptor->requestName,
+                        'accepted' => array_map(
+                            static fn (\BackedEnum $case): int|string => $case->value,
+                            $descriptor->typeName::cases(),
+                        ),
+                    ],
+                );
+            }
+
+            $dependencies[$descriptor->name] = $value;
         }
 
         return $dependencies;
@@ -148,7 +186,7 @@ class RestWrapper
     /**
      * @param string $typeName
      * @param mixed $value
-     * @return mixed
+     * @return mixed Backed enums return null when the value matches no case.
      */
     protected function castRequestArgument(string $typeName, mixed $value): mixed
     {
@@ -157,14 +195,24 @@ class RestWrapper
         }
 
         if (is_subclass_of($typeName, \BackedEnum::class)) {
-            return $typeName::from($value);
+            if (!is_int($value) && !is_string($value)) {
+                return null;
+            }
+
+            try {
+                return $typeName::tryFrom($value);
+            } catch (\TypeError) {
+                // A non-numeric string for an int-backed enum.
+                return null;
+            }
         }
 
         return match ($typeName) {
             'int' => (int)$value,
             'string' => (string)$value,
             'float' => (float)$value,
-            'bool' => (bool)$value,
+            // rest_sanitize_boolean() only changes strings ('false', '0' → false).
+            'bool' => is_string($value) ? rest_sanitize_boolean($value) : (bool)$value,
             default => $value,
         };
     }

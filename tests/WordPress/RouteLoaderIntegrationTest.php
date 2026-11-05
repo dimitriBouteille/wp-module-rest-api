@@ -111,6 +111,23 @@ class RouteLoaderIntegrationTest extends \WP_UnitTestCase
         $this->assertSame(['id' => 42], $ok->get_data());
     }
 
+    public function testMissingOptionalQueryParameterDoesNotShiftArguments(): void
+    {
+        (new RouteLoader(self::FIXTURES_DIR . '/InjectionRoute'))->register();
+        do_action('rest_api_init');
+
+        $request = new \WP_REST_Request('GET', '/integration/v1/search');
+        $request->set_query_params(['format' => 'xml', 'exact' => 'false']);
+        $response = rest_do_request($request);
+
+        $this->assertSame(200, $response->get_status());
+        $this->assertSame(
+            ['query' => '', 'format' => 'xml', 'exact' => false],
+            $response->get_data(),
+            'A missing optional parameter MUST keep its default value without shifting the next arguments.'
+        );
+    }
+
     public function testNamespaceLoaderRegistersRoutesViaComposer(): void
     {
         (new NamespaceRouteLoader(

@@ -62,11 +62,14 @@ class DocumentController
 
 Rules:
 
-- The value is cast to the declared type: `int`, `float`, `string`, `bool`. A backed enum type is built with `Enum::from()`.
-- The cast is a plain PHP cast: `?enabled=false` gives `true` for a `bool` argument. Add [`#[Param]`](parameters.md) so WordPress sanitizes the value first.
+- The value is cast to the declared type: `int`, `float`, `string`, `bool`. A `bool` follows WordPress rules: `false`, `0` and an empty string give `false`.
+- A backed enum argument receives the matching case. An unknown value returns a `400` error with the `invalid-parameter` code and the accepted values.
 - Other types (`array`, classes…) receive the raw value.
 - Arguments **without a type** are never injected.
-- If the parameter is missing from the request, the argument is not passed: give it a default value, or make it required with [`#[Param(required: true)]`](parameters.md) so WordPress answers with a `400` error before your code runs.
+- If the parameter is missing from the request:
+    - an argument with a default value keeps it;
+    - a nullable argument without default value (`?int $id`) receives `null`;
+    - otherwise, the request fails with a `400` error and the `missing-parameter` code, before your action runs.
 - To use a different name in the request, see [`#[Param(name: ...)]`](parameters.md#renaming-a-parameter).
 
 ### Getting the request object
