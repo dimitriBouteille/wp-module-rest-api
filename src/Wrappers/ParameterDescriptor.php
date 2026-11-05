@@ -22,12 +22,18 @@ final class ParameterDescriptor
      * @param int $position Zero-based parameter position in the method signature.
      * @param string|null $typeName FQCN or scalar type name; null when the parameter
      *                              has no type or a non-named type (intersection / union).
+     * @param bool $hasDefaultValue Whether the parameter declares a default value.
+     * @param bool $allowsNull Whether null is accepted (nullable type or no type).
+     * @param bool $isVariadic Whether the parameter is variadic (never injected).
      */
     public function __construct(
         public readonly string $name,
         public readonly string $requestName,
         public readonly int $position,
         public readonly ?string $typeName,
+        public readonly bool $hasDefaultValue = false,
+        public readonly bool $allowsNull = false,
+        public readonly bool $isVariadic = false,
     ) {
     }
 }

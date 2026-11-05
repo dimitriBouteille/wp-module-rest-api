@@ -10,7 +10,10 @@ namespace Dbout\WpRestApi\Tests\Unit\Wrappers;
 
 use Dbout\WpRestApi\ErrorFormat\ProblemJsonFormatter;
 use Dbout\WpRestApi\RouteAction;
+use Dbout\WpRestApi\Tests\Unit\fixtures\IntPriority;
 use Dbout\WpRestApi\Tests\Unit\fixtures\RouteReturningResponse;
+use Dbout\WpRestApi\Tests\Unit\fixtures\RouteWithInjectionCases;
+use Dbout\WpRestApi\Tests\Unit\fixtures\StringStatus;
 use Dbout\WpRestApi\Tests\Unit\fixtures\RouteReturningWpError;
 use Dbout\WpRestApi\Tests\Unit\fixtures\RouteWithException;
 use Dbout\WpRestApi\Tests\Unit\fixtures\RouteWithFatalError;
@@ -274,6 +277,142 @@ class RestWrapperTest extends TestCase
             ->execute(new \WP_REST_Request())
             ->get_data()['error'] ?? [];
         $this->assertSame('My custom exception.', $debugError['message']);
+    }
+
+    /**
+     * @covers ::collectDependencies
+     */
+    public function testMissingOptionalArgumentDoesNotShiftNextOnes(): void
+    {
+        $response = $this->executeInjectionCase('optional', ['format' => 'xml']);
+
+        $this->assertSame(200, $response->get_status());
+        $this->assertSame(['search' => '', 'format' => 'xml'], $response->get_data());
+    }
+
+    /**
+     * @covers ::collectDependencies
+     */
+    public function testMissingRequiredArgumentReturns400(): void
+    {
+        $response = $this->executeInjectionCase('required', []);
+
+        $this->assertSame(400, $response->get_status());
+        $error = $response->get_data()['error'] ?? [];
+        $this->assertSame('missing-parameter', $error['code']);
+        $this->assertSame(['parameter' => 'id'], $error['data']);
+    }
+
+    /**
+     * @covers ::collectDependencies
+     */
+    public function testMissingNullableArgumentReceivesNull(): void
+    {
+        $response = $this->executeInjectionCase('nullable', []);
+
+        $this->assertSame(200, $response->get_status());
+        $this->assertSame(['id' => null], $response->get_data());
+    }
+
+    /**
+     * @covers ::collectDependencies
+     * @covers ::castRequestArgument
+     */
+    public function testValidEnumValuesAreCast(): void
+    {
+        $response = $this->executeInjectionCase('enums', ['status' => 'draft', 'priority' => '2']);
+
+        $this->assertSame(200, $response->get_status());
+        $this->assertSame(
+            ['status' => StringStatus::Draft, 'priority' => IntPriority::High],
+            $response->get_data()
+        );
+    }
+
+    /**
+     * @param array<string, mixed> $params
+     * @param string $parameter
+     * @param array<int|string> $accepted
+     * @dataProvider providerInvalidEnumValues
+     * @covers ::collectDependencies
+     * @covers ::castRequestArgument
+     */
+    public function testInvalidEnumValueReturns400(array $params, string $parameter, array $accepted): void
+    {
+        $response = $this->executeInjectionCase('enums', $params);
+
+        $this->assertSame(400, $response->get_status());
+        $error = $response->get_data()['error'] ?? [];
+        $this->assertSame('invalid-parameter', $error['code']);
+        $this->assertSame(['parameter' => $parameter, 'accepted' => $accepted], $error['data']);
+    }
+
+    /**
+     * @return \Generator
+     */
+    public static function providerInvalidEnumValues(): \Generator
+    {
+        yield 'Unknown string value' => [['status' => 'archived'], 'status', ['draft', 'published']];
+        yield 'Unknown int value' => [['status' => 'draft', 'priority' => '9'], 'priority', [1, 2]];
+        yield 'Non-numeric value for an int enum' => [['status' => 'draft', 'priority' => 'abc'], 'priority', [1, 2]];
+        yield 'Array value' => [['status' => ['draft']], 'status', ['draft', 'published']];
+    }
+
+    /**
+     * @param mixed $value
+     * @param bool $expected
+     * @dataProvider providerBoolValues
+     * @covers ::castRequestArgument
+     */
+    public function testBoolCastFollowsRestSanitizeBoolean(mixed $value, bool $expected): void
+    {
+        $response = $this->executeInjectionCase('boolean', ['enabled' => $value]);
+
+        $this->assertSame(200, $response->get_status());
+        $this->assertSame(['enabled' => $expected], $response->get_data());
+    }
+
+    /**
+     * @return \Generator
+     */
+    public static function providerBoolValues(): \Generator
+    {
+        yield '"false"' => ['false', false];
+        yield '"FALSE"' => ['FALSE', false];
+        yield '"0"' => ['0', false];
+        yield 'empty string' => ['', false];
+        yield '"true"' => ['true', true];
+        yield '"1"' => ['1', true];
+        yield 'native false' => [false, false];
+        yield 'native true' => [true, true];
+    }
+
+    /**
+     * @covers ::collectDependencies
+     */
+    public function testRequestIsInjectedBetweenOtherArguments(): void
+    {
+        $response = $this->executeInjectionCase('requestInTheMiddle', ['id' => '7'], 'POST');
+
+        $this->assertSame(200, $response->get_status());
+        $this->assertSame(['id' => 7, 'method' => 'POST', 'sort' => 'asc'], $response->get_data());
+    }
+
+    /**
+     * @param string $method
+     * @param array<string, mixed> $params
+     * @param string $httpMethod
+     * @return \WP_REST_Response
+     */
+    protected function executeInjectionCase(string $method, array $params, string $httpMethod = 'GET'): \WP_REST_Response
+    {
+        $action = new RouteAction(RouteWithInjectionCases::class, $method, [$httpMethod], null);
+        $request = new \WP_REST_Request($httpMethod, '/dummy');
+        foreach ($params as $key => $value) {
+            $request->set_param($key, $value);
+        }
+
+        return (new RestWrapper($action))->execute($request);
     }
 
     /**
