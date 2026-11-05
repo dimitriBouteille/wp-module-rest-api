@@ -128,6 +128,20 @@ class RouteLoaderIntegrationTest extends \WP_UnitTestCase
         );
     }
 
+    public function testArrayReturnAndWpErrorStatusThroughRestServer(): void
+    {
+        (new RouteLoader(self::FIXTURES_DIR . '/ReturnValueRoute'))->register();
+        do_action('rest_api_init');
+
+        $response = rest_do_request(new \WP_REST_Request('GET', '/integration/v1/return-values'));
+        $this->assertSame(200, $response->get_status());
+        $this->assertSame(['ok' => true], $response->get_data(), 'An array returned by an action MUST be sent as the response body.');
+
+        $response = rest_do_request(new \WP_REST_Request('DELETE', '/integration/v1/return-values'));
+        $this->assertSame(404, $response->get_status(), 'The status of a returned WP_Error MUST be honored.');
+        $this->assertSame('not-found', $response->get_data()['error']['code'] ?? null);
+    }
+
     public function testNamespaceLoaderRegistersRoutesViaComposer(): void
     {
         (new NamespaceRouteLoader(

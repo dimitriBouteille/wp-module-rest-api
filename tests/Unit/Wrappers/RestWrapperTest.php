@@ -13,6 +13,7 @@ use Dbout\WpRestApi\RouteAction;
 use Dbout\WpRestApi\Tests\Unit\fixtures\IntPriority;
 use Dbout\WpRestApi\Tests\Unit\fixtures\RouteReturningResponse;
 use Dbout\WpRestApi\Tests\Unit\fixtures\RouteWithInjectionCases;
+use Dbout\WpRestApi\Tests\Unit\fixtures\RouteWithReturnValues;
 use Dbout\WpRestApi\Tests\Unit\fixtures\StringStatus;
 use Dbout\WpRestApi\Tests\Unit\fixtures\RouteReturningWpError;
 use Dbout\WpRestApi\Tests\Unit\fixtures\RouteWithException;
@@ -396,6 +397,115 @@ class RestWrapperTest extends TestCase
 
         $this->assertSame(200, $response->get_status());
         $this->assertSame(['id' => 7, 'method' => 'POST', 'sort' => 'asc'], $response->get_data());
+    }
+
+    /**
+     * @covers ::execute
+     * @covers ::toRestResponse
+     */
+    public function testArrayReturnIsWrapped(): void
+    {
+        $response = $this->executeReturnCase('arrayValue');
+
+        $this->assertInstanceOf(\WP_REST_Response::class, $response);
+        $this->assertSame(200, $response->get_status());
+        $this->assertSame(['ok' => true], $response->get_data());
+    }
+
+    /**
+     * @covers ::execute
+     * @covers ::toRestResponse
+     */
+    public function testJsonSerializableReturnIsWrapped(): void
+    {
+        $response = $this->executeReturnCase('jsonSerializable');
+
+        $this->assertSame(200, $response->get_status());
+        $this->assertInstanceOf(\JsonSerializable::class, $response->get_data());
+        $this->assertSame('{"id":18}', wp_json_encode($response->get_data()));
+    }
+
+    /**
+     * @covers ::execute
+     * @covers ::toRestResponse
+     */
+    public function testNullReturnIsWrapped(): void
+    {
+        $response = $this->executeReturnCase('nullValue');
+
+        $this->assertSame(200, $response->get_status());
+        $this->assertNull($response->get_data());
+    }
+
+    /**
+     * @covers ::execute
+     * @covers ::toRestResponse
+     * @covers ::onError
+     */
+    public function testUnserializableReturnReturns500(): void
+    {
+        $response = $this->executeReturnCase('closure');
+        $this->exceptionAsserts($response, 'Something went wrong. Please try again.', 500);
+
+        $response = $this->executeReturnCase('closure', debug: true);
+        $this->assertSame(500, $response->get_status());
+        $this->assertStringContainsString(
+            'RouteWithReturnValues::closure() returned a Closure',
+            $response->get_data()['error']['message'] ?? '',
+        );
+    }
+
+    /**
+     * @covers ::execute
+     * @covers ::onWpError
+     */
+    public function testWpErrorStatusIsHonored(): void
+    {
+        $response = $this->executeReturnCase('wpErrorNotFound');
+
+        $this->assertSame(404, $response->get_status());
+        $error = $response->get_data()['error'] ?? null;
+        $this->assertSame('not-found', $error['code']);
+        $this->assertSame('Document not found.', $error['message']);
+        $this->assertSame(['id' => 18], $error['data'], 'The status must not be sent in the error data.');
+
+        $this->assertSame(403, $this->executeReturnCase('wpErrorStringStatus')->get_status());
+    }
+
+    /**
+     * @param string $method
+     * @return void
+     * @dataProvider providerWpErrorInvalidStatus
+     * @covers ::execute
+     * @covers ::onWpError
+     */
+    public function testWpErrorInvalidStatusFallsBackTo500(string $method): void
+    {
+        $response = $this->executeReturnCase($method);
+
+        $this->assertSame(500, $response->get_status());
+        $this->assertSame([], $response->get_data()['error']['data'] ?? null);
+    }
+
+    /**
+     * @return \Generator
+     */
+    public static function providerWpErrorInvalidStatus(): \Generator
+    {
+        yield 'Success status' => ['wpErrorSuccessStatus'];
+        yield 'Not a number' => ['wpErrorInvalidStatus'];
+    }
+
+    /**
+     * @param string $method
+     * @param bool $debug
+     * @return \WP_REST_Response
+     */
+    protected function executeReturnCase(string $method, bool $debug = false): \WP_REST_Response
+    {
+        $action = new RouteAction(RouteWithReturnValues::class, $method, ['GET'], null);
+
+        return (new RestWrapper($action, $debug))->execute(new \WP_REST_Request());
     }
 
     /**

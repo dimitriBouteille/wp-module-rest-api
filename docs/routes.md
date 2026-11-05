@@ -87,9 +87,22 @@ public function update(int $id, \WP_REST_Request $request): \WP_REST_Response
 
 ## Return value
 
-An action should return a `\WP_REST_Response`. You can also:
+An action can return:
 
-- throw a `RouteException` to return an error, see [Error handling](error-handling.md);
-- return a `\WP_Error`, it is converted to the same error format.
+- a `\WP_REST_Response`, sent as is: use it to set the status code or headers;
+- an array, a scalar, `null` or a `JsonSerializable` object: it becomes the body of a `200` response, like a native WordPress callback;
+- a `\WP_Error`: it is converted to the error format, and its `status` data sets the status code, see [Error handling](error-handling.md#returning-a-wp_error).
+
+```php
+#[Action(Method::GET)]
+public function get(int $id): array
+{
+    return ['id' => $id, 'title' => get_the_title($id)];
+}
+```
+
+To return an error, you can also throw a `RouteException`, see [Error handling](error-handling.md).
+
+> ⚠️ A value that cannot be sent as JSON (a closure, a resource) returns a `500` error. The detail is shown in [debug mode](configuration.md#debug).
 
 Next: [Request parameters](parameters.md).
