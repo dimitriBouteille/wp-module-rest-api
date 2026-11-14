@@ -1,5 +1,14 @@
 # Upgrade guide
 
+## From 2.0 to 2.1
+
+Version 2.1 only adds features. One change can affect code that works with the route cache directly:
+
+- **Route cache key:** `cacheKey` is now a prefix. The item is stored under `{cacheKey}_{hash}`, where the hash depends
+  on the module version and the new `cacheVersion` / `cacheFingerprint` options. If you read or delete the item
+  yourself, use `$loader->getCacheKey()`. The entry stored under the old key is no longer read: it stays in the pool
+  until it expires. See [Cache invalidation](docs/configuration.md#cache-invalidation).
+
 ## From 1.x to 2.0
 
 Version 2.0 contains a small number of breaking changes. Most projects only need to check the
