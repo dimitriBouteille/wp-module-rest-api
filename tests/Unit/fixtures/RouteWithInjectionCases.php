@@ -52,6 +52,11 @@ class RouteWithInjectionCases
         ]);
     }
 
+    public function number(float $ratio): \WP_REST_Response
+    {
+        return new \WP_REST_Response(['ratio' => $ratio]);
+    }
+
     /**
      * @param array<mixed> $ids
      */

@@ -509,6 +509,17 @@ class RestWrapperTest extends TestCase
     }
 
     /**
+     * @covers ::castRequestArgument
+     */
+    public function testFloatCast(): void
+    {
+        $response = $this->executeInjectionCase('number', ['ratio' => '1.5']);
+
+        $this->assertSame(200, $response->get_status());
+        $this->assertSame(['ratio' => 1.5], $response->get_data());
+    }
+
+    /**
      * @param mixed $value
      * @param array<mixed> $expected
      * @return void
