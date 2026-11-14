@@ -60,7 +60,7 @@ use Dbout\WpRestApi\Attributes\Action;
 use Dbout\WpRestApi\Attributes\Route;
 use Dbout\WpRestApi\Enums\Method;
 
-#[Route('app/v1', '/documents/(?P<id>\d+)')]
+#[Route('app/v1', '/documents/{id:\d+}')]
 class DocumentController
 {
     #[Action(Method::GET)]

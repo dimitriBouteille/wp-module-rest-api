@@ -20,7 +20,7 @@ class Action
     /**
      * @param Method|array<Method> $methods
      * @param mixed|null $permissionCallback This is a function that checks if the user can perform the action (reading, updating, etc.) before the real callback is called.
-     * @param string|null $path Appended to the #[Route] path, for example '/(?P<id>\d+)'. Actions sharing the same final path are registered as one WordPress route.
+     * @param string|null $path Appended to the #[Route] path, for example '/{id:\d+}'. Actions sharing the same final path are registered as one WordPress route.
      */
     public function __construct(
         public readonly Method|array $methods,

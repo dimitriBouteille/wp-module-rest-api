@@ -14,7 +14,7 @@ use Dbout\WpRestApi\Attributes\Route;
 use Dbout\WpRestApi\Enums\Method;
 use Dbout\WpRestApi\Permissions\IsAdministrator;
 
-#[Route('app/v1', '/admin/documents/(?P<id>\d+)', permissionCallback: IsAdministrator::class)]
+#[Route('app/v1', '/admin/documents/{id:\d+}', permissionCallback: IsAdministrator::class)]
 class AdminDocumentController
 {
     #[Action(Method::GET)]
@@ -39,7 +39,7 @@ Set `permissionCallback` on `#[Action]`. It **replaces** the route permission fo
 use Dbout\WpRestApi\Permissions\IsAdministrator;
 use Dbout\WpRestApi\Permissions\IsAuthor;
 
-#[Route('app/v1', '/documents/(?P<id>\d+)', permissionCallback: IsAuthor::class)]
+#[Route('app/v1', '/documents/{id:\d+}', permissionCallback: IsAuthor::class)]
 class DocumentController
 {
     #[Action(Method::GET)]

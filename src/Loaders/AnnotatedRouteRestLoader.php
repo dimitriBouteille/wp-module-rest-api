@@ -13,6 +13,7 @@ use Dbout\WpRestApi\Attributes\Param;
 use Dbout\WpRestApi\Attributes\Route;
 use Dbout\WpRestApi\Enums\Method;
 use Dbout\WpRestApi\Exceptions\ApiException;
+use Dbout\WpRestApi\Helpers\PathCompiler;
 use Dbout\WpRestApi\ParamSpec;
 use Dbout\WpRestApi\Route as RestRoute;
 use Dbout\WpRestApi\RouteAction;
@@ -42,11 +43,12 @@ class AnnotatedRouteRestLoader implements InterfaceLoader
 
     /**
      * Loads the routes of a class: one route per final path, the #[Route]
-     * path followed by the optional #[Action] path.
+     * path followed by the optional #[Action] path. Placeholders such as
+     * `{id:\d+}` are compiled here, so cached routes hold the final regex.
      *
      * @param mixed $resource Class name.
      * @throws \InvalidArgumentException When the class does not exist or is abstract.
-     * @throws ApiException When a final path is empty.
+     * @throws ApiException When a final path is empty or has an invalid placeholder.
      * @return list<RestRoute> Empty when the class has no #[Route] or no #[Action].
      */
     public function loadRoutes(mixed $resource): array
@@ -78,7 +80,7 @@ class AnnotatedRouteRestLoader implements InterfaceLoader
                 continue;
             }
 
-            $path = $this->buildPath($route->route, $action->path);
+            $path = PathCompiler::compile($this->buildPath($route->route, $action->path));
             $actionsByPath[$path][] = $this->createAction($class, $method, $route, $action);
         }
 

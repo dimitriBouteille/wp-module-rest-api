@@ -208,6 +208,21 @@ class RouteLoaderIntegrationTest extends \WP_UnitTestCase
         $this->assertSame(404, $missing->get_status(), 'DELETE is only declared on the item path.');
     }
 
+    public function testPathPlaceholdersAreResolvedAndInjected(): void
+    {
+        (new NamespaceRouteLoader(
+            'Dbout\\WpRestApi\\Tests\\WordPress\\fixtures\\PlaceholderRoute\\',
+        ))->register();
+        do_action('rest_api_init');
+
+        $response = rest_do_request(new \WP_REST_Request('GET', '/integration/v1/articles/18/comments/first-comment'));
+        $this->assertSame(200, $response->get_status());
+        $this->assertSame(['id' => 18, 'slug' => 'first-comment'], $response->get_data());
+
+        $invalid = rest_do_request(new \WP_REST_Request('GET', '/integration/v1/articles/abc/comments/first-comment'));
+        $this->assertSame(404, $invalid->get_status(), 'The placeholder pattern MUST be applied by WordPress.');
+    }
+
     public function testNamespaceLoaderRegistersRoutesViaComposer(): void
     {
         (new NamespaceRouteLoader(

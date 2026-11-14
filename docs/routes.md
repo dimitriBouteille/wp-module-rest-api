@@ -7,7 +7,7 @@ A route is a class with a `#[Route]` attribute. Each public method with an `#[Ac
 ```php
 #[Route(
     namespace: 'app/v1',
-    route: '/documents/(?P<id>\d+)',
+    route: '/documents/{id:\d+}',
     permissionCallback: null, // optional, see Permissions
 )]
 ```
@@ -15,10 +15,38 @@ A route is a class with a `#[Route]` attribute. Each public method with an `#[Ac
 | Argument             | Description                                                                                                              |
 |----------------------|--------------------------------------------------------------------------------------------------------------------------|
 | `namespace`          | The first segment after `/wp-json/`, usually your vendor name and a version: `app/v1`.                                   |
-| `route`              | The path, as accepted by [`register_rest_route()`](https://developer.wordpress.org/reference/functions/register_rest_route/). Named groups (`(?P<id>\d+)`) become request parameters. |
+| `route`              | The path. Placeholders (`{id:\d+}`) become request parameters, see [Path placeholders](#path-placeholders). |
 | `permissionCallback` | Default permission for every action of the route. See [Permissions](permissions.md).                                    |
 
 The final URL is `/wp-json/{namespace}{route}`, for example `/wp-json/app/v1/documents/18`.
+
+## Path placeholders
+
+Use placeholders in `#[Route]` and `#[Action(path: …)]` to declare path parameters:
+
+| Placeholder         | Matches                     | Compiled to             |
+|---------------------|-----------------------------|-------------------------|
+| `{id}`              | any segment, up to the next `/` | `(?P<id>[^/]+)`     |
+| `{id:\d+}`          | digits only                 | `(?P<id>\d+)`           |
+| `{slug:[a-z0-9-]+}` | your own regex              | `(?P<slug>[a-z0-9-]+)`  |
+
+```php
+#[Route('app/v1', '/users/{userId:\d+}/posts/{slug}')]
+class UserPostController
+{
+    #[Action(Method::GET)]
+    public function get(int $userId, string $slug): \WP_REST_Response
+    {
+        // GET /wp-json/app/v1/users/7/posts/hello-world
+    }
+}
+```
+
+- The name is the request parameter name, so it is [injected](#argument-injection) into the argument with the same name. It must be a valid PHP variable name: `{document-id}` throws an `ApiException` when routes are loaded.
+- The regex can contain braces: `{code:[A-Z]{3}}`.
+- Raw WordPress regex keeps working: `/documents/(?P<id>\d+)` is the same as `/documents/{id:\d+}`.
+
+> 💡 Without a regex, `{id}` accepts any value: `/documents/abc` reaches your action. Add a regex such as `{id:\d+}` to let WordPress return a `404` for invalid values.
 
 ## `#[Action]`
 
@@ -64,19 +92,19 @@ class DocumentController
         // POST /wp-json/app/v1/documents
     }
 
-    #[Action(Method::GET, path: '/(?P<id>\d+)')]
+    #[Action(Method::GET, path: '/{id:\d+}')]
     public function get(int $id): \WP_REST_Response
     {
         // GET /wp-json/app/v1/documents/18
     }
 
-    #[Action([Method::PUT, Method::PATCH], path: '/(?P<id>\d+)')]
+    #[Action([Method::PUT, Method::PATCH], path: '/{id:\d+}')]
     public function update(int $id, \WP_REST_Request $request): \WP_REST_Response
     {
         // PUT or PATCH /wp-json/app/v1/documents/18
     }
 
-    #[Action(Method::DELETE, path: '/(?P<id>\d+)', permissionCallback: IsAdministrator::class)]
+    #[Action(Method::DELETE, path: '/{id:\d+}', permissionCallback: IsAdministrator::class)]
     public function delete(int $id): \WP_REST_Response
     {
         // DELETE /wp-json/app/v1/documents/18, administrators only
@@ -85,7 +113,7 @@ class DocumentController
 ```
 
 - Actions with the same final path are registered as one WordPress route.
-- The two parts are joined with a single slash: `'/(?P<id>\d+)'` and `'(?P<id>\d+)'` give the same path. As in WordPress, leading and trailing slashes do not matter.
+- The two parts are joined with a single slash: `'/{id:\d+}'` and `'{id:\d+}'` give the same path. As in WordPress, leading and trailing slashes do not matter.
 - The namespace and the default permission still come from `#[Route]`.
 
 ## Argument injection
@@ -93,7 +121,7 @@ class DocumentController
 Instead of reading `$request->get_param()` by hand, declare the parameters you need as method arguments. The module matches each argument **by name** with the request parameters (URL groups, query string, body).
 
 ```php
-#[Route('app/v1', '/documents/(?P<id>\d+)')]
+#[Route('app/v1', '/documents/{id:\d+}')]
 class DocumentController
 {
     #[Action(Method::GET)]
