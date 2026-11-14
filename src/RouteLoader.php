@@ -320,9 +320,10 @@ class RouteLoader
                 }
 
                 throw new ApiException(sprintf(
-                    'You cannot use the same method on the URL %s/%s multiple times.',
+                    'You cannot use the same method on the URL %s/%s multiple times. Check the #[Action] methods and paths of %s.',
                     $route->namespace,
-                    $route->path
+                    ltrim($route->path, '/'),
+                    is_string($action->className) ? $action->className : 'the route class',
                 ));
             }
         }

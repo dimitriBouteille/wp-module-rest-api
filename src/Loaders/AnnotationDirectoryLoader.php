@@ -63,12 +63,16 @@ class AnnotationDirectoryLoader implements InterfaceLoader
                 continue;
             }
 
-            $classRoute = $this->annotationClassLoader->load($class);
-            if (!$classRoute instanceof Route) {
-                continue;
-            }
+            $loaded = $this->annotationClassLoader instanceof AnnotatedRouteRestLoader
+                ? $this->annotationClassLoader->loadRoutes($class)
+                : $this->annotationClassLoader->load($class);
 
-            $routes[] = $classRoute;
+            // A custom InterfaceLoader may return one route or a list of routes.
+            foreach (is_array($loaded) ? $loaded : [$loaded] as $classRoute) {
+                if ($classRoute instanceof Route) {
+                    $routes[] = $classRoute;
+                }
+            }
         }
 
         return $routes;

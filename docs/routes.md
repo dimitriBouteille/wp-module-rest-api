@@ -26,6 +26,7 @@ The final URL is `/wp-json/{namespace}{route}`, for example `/wp-json/app/v1/doc
 #[Action(
     methods: Method::GET,
     permissionCallback: null, // optional, overrides the route permission
+    path: null,               // optional, appended to the route path
 )]
 ```
 
@@ -41,7 +42,51 @@ public function save(\WP_REST_Request $request): \WP_REST_Response
 }
 ```
 
-> ⚠️ A method can only be used once per route. Declaring two `GET` actions on the same class throws an `ApiException` when routes are loaded.
+> ⚠️ A method can only be used once per path. Declaring two `GET` actions on the same path throws an `ApiException` when routes are loaded.
+
+## Several paths in one class
+
+A resource usually needs two paths: the collection (`/documents`) and the item (`/documents/18`). Use the `path` argument of `#[Action]` to serve both from one class. It is appended to the `#[Route]` path:
+
+```php
+#[Route('app/v1', '/documents')]
+class DocumentController
+{
+    #[Action(Method::GET)]
+    public function list(): \WP_REST_Response
+    {
+        // GET /wp-json/app/v1/documents
+    }
+
+    #[Action(Method::POST)]
+    public function create(\WP_REST_Request $request): \WP_REST_Response
+    {
+        // POST /wp-json/app/v1/documents
+    }
+
+    #[Action(Method::GET, path: '/(?P<id>\d+)')]
+    public function get(int $id): \WP_REST_Response
+    {
+        // GET /wp-json/app/v1/documents/18
+    }
+
+    #[Action([Method::PUT, Method::PATCH], path: '/(?P<id>\d+)')]
+    public function update(int $id, \WP_REST_Request $request): \WP_REST_Response
+    {
+        // PUT or PATCH /wp-json/app/v1/documents/18
+    }
+
+    #[Action(Method::DELETE, path: '/(?P<id>\d+)', permissionCallback: IsAdministrator::class)]
+    public function delete(int $id): \WP_REST_Response
+    {
+        // DELETE /wp-json/app/v1/documents/18, administrators only
+    }
+}
+```
+
+- Actions with the same final path are registered as one WordPress route.
+- The two parts are joined with a single slash: `'/(?P<id>\d+)'` and `'(?P<id>\d+)'` give the same path. As in WordPress, leading and trailing slashes do not matter.
+- The namespace and the default permission still come from `#[Route]`.
 
 ## Argument injection
 

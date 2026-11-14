@@ -8,6 +8,7 @@
 
 namespace Dbout\WpRestApi\Tests\Unit\Loaders;
 
+use Dbout\WpRestApi\Exceptions\ApiException;
 use Dbout\WpRestApi\Loaders\AnnotatedRouteRestLoader;
 use Dbout\WpRestApi\Permissions\IsAdministrator;
 use Dbout\WpRestApi\Permissions\IsEditor;
@@ -15,6 +16,7 @@ use Dbout\WpRestApi\Permissions\IsPublic;
 use Dbout\WpRestApi\ParamSpec;
 use Dbout\WpRestApi\Route;
 use Dbout\WpRestApi\Tests\Unit\fixtures\Loaders\SortDirection;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Loaders\WithActionPaths\RouteWithActionPaths;
 use Dbout\WpRestApi\Tests\Unit\fixtures\Loaders\WithEnumParam\RouteWithEnumParam;
 use Dbout\WpRestApi\Tests\Unit\fixtures\Loaders\WithIntParams\RouteWithIntParams;
 use Dbout\WpRestApi\Tests\Unit\fixtures\Loaders\WithParams\RouteWithParams;
@@ -159,5 +161,53 @@ class AnnotatedRouteRestLoaderTest extends TestCase
         }
 
         return $permissions;
+    }
+
+    /**
+     * @covers ::loadRoutes
+     * @covers ::buildPath
+     */
+    public function testActionPathCreatesSeparateRoutes(): void
+    {
+        $routes = (new AnnotatedRouteRestLoader())->loadRoutes(RouteWithActionPaths::class);
+
+        $this->assertCount(2, $routes, 'One route per distinct final path.');
+
+        $actionsByPath = [];
+        foreach ($routes as $route) {
+            $this->assertSame('loader-test/v1', $route->namespace);
+            $actionsByPath[$route->path] = array_map(
+                static fn ($action): string => $action->methodName,
+                $route->actions,
+            );
+        }
+
+        $this->assertSame([
+            '/documents' => ['list', 'create'],
+            '/documents/(?P<id>\d+)' => ['get', 'delete'],
+        ], $actionsByPath, 'Paths are joined with a single slash, without leading or trailing slash.');
+
+        $delete = $routes[1]->actions[1];
+        $this->assertSame(IsAdministrator::class, $delete->permissionCallback);
+        $this->assertSame(['DELETE'], $delete->methods);
+    }
+
+    /**
+     * @covers ::load
+     */
+    public function testLoadThrowsWhenClassDeclaresSeveralPaths(): void
+    {
+        $this->expectException(ApiException::class);
+        $this->expectExceptionMessage('loadRoutes()');
+
+        (new AnnotatedRouteRestLoader())->load(RouteWithActionPaths::class);
+    }
+
+    /**
+     * @covers ::loadRoutes
+     */
+    public function testLoadRoutesReturnsEmptyListForClassWithoutRoute(): void
+    {
+        $this->assertSame([], (new AnnotatedRouteRestLoader())->loadRoutes(\stdClass::class));
     }
 }
