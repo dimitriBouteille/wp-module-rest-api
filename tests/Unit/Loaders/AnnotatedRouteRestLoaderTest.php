@@ -17,6 +17,7 @@ use Dbout\WpRestApi\ParamSpec;
 use Dbout\WpRestApi\Route;
 use Dbout\WpRestApi\Tests\Unit\fixtures\Loaders\SortDirection;
 use Dbout\WpRestApi\Tests\Unit\fixtures\Loaders\WithActionPaths\RouteWithActionPaths;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Loaders\WithPlaceholders\RouteWithPlaceholders;
 use Dbout\WpRestApi\Tests\Unit\fixtures\Loaders\WithEnumParam\RouteWithEnumParam;
 use Dbout\WpRestApi\Tests\Unit\fixtures\Loaders\WithIntParams\RouteWithIntParams;
 use Dbout\WpRestApi\Tests\Unit\fixtures\Loaders\WithParams\RouteWithParams;
@@ -209,5 +210,26 @@ class AnnotatedRouteRestLoaderTest extends TestCase
     public function testLoadRoutesReturnsEmptyListForClassWithoutRoute(): void
     {
         $this->assertSame([], (new AnnotatedRouteRestLoader())->loadRoutes(\stdClass::class));
+    }
+
+    /**
+     * @covers ::loadRoutes
+     */
+    public function testPlaceholdersAreCompiledAndGroupedWithRawRegex(): void
+    {
+        $routes = (new AnnotatedRouteRestLoader())->loadRoutes(RouteWithPlaceholders::class);
+
+        $actionsByPath = [];
+        foreach ($routes as $route) {
+            $actionsByPath[$route->path] = array_map(
+                static fn ($action): string => $action->methodName,
+                $route->actions,
+            );
+        }
+
+        $this->assertSame([
+            '/countries/(?P<code>[A-Z]{3})' => ['get', 'update'],
+            '/countries/(?P<code>[A-Z]{3})/cities/(?P<city>[^/]+)' => ['city'],
+        ], $actionsByPath, 'A placeholder and the matching raw regex MUST give the same route.');
     }
 }
