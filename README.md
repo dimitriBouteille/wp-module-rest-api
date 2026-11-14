@@ -84,7 +84,7 @@ class DocumentController
 ## Features
 
 - **Attribute-based routing**: `#[Route]` on the class, `#[Action]` on each method, one or several HTTP methods per action. Readable paths with placeholders (`/documents/{id:\d+}`), and a single class can serve a whole resource with `#[Action(path: …)]`.
-- **Argument injection**: URL and request parameters are passed as method arguments and cast to the declared type (`int`, `string`, `float`, `bool`, backed enums). Type a parameter as `\WP_REST_Request` to get the full request.
+- **Argument injection**: URL and request parameters are passed as method arguments and cast to the declared type (`int`, `string`, `float`, `bool`, `array`, backed enums). Type a parameter as `\WP_REST_Request` to get the full request, as `\WP_User` to get the logged-in user, or build it yourself with `#[Resolve]`.
 - **Parameter schema**: describe arguments with `#[Param]` (required, default, enum, description, sanitize and validate callbacks). They are registered as WordPress route `args`.
 - **Permissions**: built-in role checks (`IsAdministrator`, `IsEditor`, `IsAuthor`, `IsContributor`, `IsSubscriber`), `IsPublic` to open an action on a protected route, your own `PermissionInterface` classes, or any callable. They can be set on the route or on each action.
 - **Error handling**: throw a `RouteException` (or `NotFoundException`) and it becomes a clean JSON error response with the right HTTP status. The [RFC 7807](https://www.rfc-editor.org/rfc/rfc7807) `application/problem+json` format is available through `ProblemJsonFormatter`.

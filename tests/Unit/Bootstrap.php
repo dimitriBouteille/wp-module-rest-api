@@ -68,6 +68,7 @@ class Bootstrap
             '/rest-api/class-wp-rest-response.php',
             '/rest-api/class-wp-rest-request.php',
             '/class-wp-error.php',
+            '/class-wp-user.php',
         ];
 
         foreach ($paths as $path) {

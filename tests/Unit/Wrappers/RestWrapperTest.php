@@ -509,6 +509,120 @@ class RestWrapperTest extends TestCase
     }
 
     /**
+     * @param mixed $value
+     * @param array<mixed> $expected
+     * @return void
+     * @dataProvider providerArrayCast
+     * @covers ::castRequestArgument
+     */
+    public function testArrayCast(mixed $value, array $expected): void
+    {
+        $response = $this->executeInjectionCase('arrays', ['ids' => $value]);
+
+        $this->assertSame(200, $response->get_status());
+        $this->assertSame(['ids' => $expected], $response->get_data());
+    }
+
+    /**
+     * @return \Generator
+     */
+    public static function providerArrayCast(): \Generator
+    {
+        yield 'Array kept' => [[1, 2], [1, 2]];
+        yield 'Comma separated string' => ['1,2', ['1', '2']];
+        yield 'Single value' => ['5', ['5']];
+        yield 'Empty string' => ['', []];
+        yield 'Int' => [7, ['7']];
+    }
+
+    /**
+     * @covers ::collectDependencies
+     * @covers ::injectCurrentUser
+     */
+    public function testWpUserInjection(): void
+    {
+        $user = $this->getMockBuilder(\WP_User::class)->disableOriginalConstructor()->getMock();
+        $user->ID = 7;
+
+        $response = $this->executeUserCase('currentUser', $user);
+
+        $this->assertSame(200, $response->get_status());
+        $this->assertSame(['userId' => 7], $response->get_data());
+    }
+
+    /**
+     * @covers ::collectDependencies
+     * @covers ::injectCurrentUser
+     */
+    public function testWpUserWhenLoggedOut(): void
+    {
+        $response = $this->executeUserCase('currentUser', null);
+        $this->assertSame(401, $response->get_status(), 'A non-nullable WP_User MUST require a logged-in user.');
+        $this->assertSame('not-logged-in', $response->get_data()['error']['code'] ?? null);
+
+        $response = $this->executeUserCase('optionalUser', null);
+        $this->assertSame(200, $response->get_status());
+        $this->assertSame(['userId' => null], $response->get_data(), 'A nullable WP_User MUST receive null when logged out.');
+    }
+
+    /**
+     * @covers ::collectDependencies
+     * @covers ::resolveArgument
+     */
+    public function testResolveAttributeIsHonored(): void
+    {
+        $response = $this->executeInjectionCase('resolved', ['id' => '18', 'value' => 'ignored']);
+
+        $this->assertSame(200, $response->get_status());
+        $this->assertSame(
+            ['value' => 'value:18', 'id' => 18],
+            $response->get_data(),
+            'The resolver MUST receive the parameter and the request, and win over the request parameter.'
+        );
+    }
+
+    /**
+     * Routes loaded from the cache skip the load-time check: the wrapper
+     * checks again and fails with a 500.
+     *
+     * @covers ::resolveArgument
+     */
+    public function testInvalidResolverClassFailsAtRequestTime(): void
+    {
+        $action = new RouteAction(RouteWithInjectionCases::class, 'invalidResolver', ['GET'], null);
+        $response = (new RestWrapper($action, true))->execute(new \WP_REST_Request('GET', '/dummy'));
+
+        $this->assertSame(500, $response->get_status());
+        $this->assertStringContainsString(
+            'must implement Dbout\WpRestApi\Resolvers\ParameterResolverInterface',
+            $response->get_data()['error']['message'] ?? '',
+        );
+    }
+
+    /**
+     * @param string $method
+     * @param \WP_User|null $user
+     * @return \WP_REST_Response
+     */
+    protected function executeUserCase(string $method, ?\WP_User $user): \WP_REST_Response
+    {
+        $action = new RouteAction(RouteWithInjectionCases::class, $method, ['GET'], null);
+        $wrapper = new class ($action, $user) extends RestWrapper {
+            public function __construct(RouteAction $action, private readonly ?\WP_User $user)
+            {
+                parent::__construct($action);
+            }
+
+            protected function currentUser(): ?\WP_User
+            {
+                return $this->user;
+            }
+        };
+
+        return $wrapper->execute(new \WP_REST_Request('GET', '/dummy'));
+    }
+
+    /**
      * @param string $method
      * @param array<string, mixed> $params
      * @param string $httpMethod

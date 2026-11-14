@@ -25,6 +25,7 @@ final class ParameterDescriptor
      * @param bool $hasDefaultValue Whether the parameter declares a default value.
      * @param bool $allowsNull Whether null is accepted (nullable type or no type).
      * @param bool $isVariadic Whether the parameter is variadic (never injected).
+     * @param class-string|null $resolverClass Resolver declared with #[Resolve], if any.
      */
     public function __construct(
         public readonly string $name,
@@ -34,6 +35,7 @@ final class ParameterDescriptor
         public readonly bool $hasDefaultValue = false,
         public readonly bool $allowsNull = false,
         public readonly bool $isVariadic = false,
+        public readonly ?string $resolverClass = null,
     ) {
     }
 }

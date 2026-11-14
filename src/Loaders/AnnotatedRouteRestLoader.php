@@ -10,13 +10,16 @@ namespace Dbout\WpRestApi\Loaders;
 
 use Dbout\WpRestApi\Attributes\Action;
 use Dbout\WpRestApi\Attributes\Param;
+use Dbout\WpRestApi\Attributes\Resolve;
 use Dbout\WpRestApi\Attributes\Route;
 use Dbout\WpRestApi\Enums\Method;
 use Dbout\WpRestApi\Exceptions\ApiException;
 use Dbout\WpRestApi\Helpers\PathCompiler;
 use Dbout\WpRestApi\ParamSpec;
+use Dbout\WpRestApi\Resolvers\ParameterResolverInterface;
 use Dbout\WpRestApi\Route as RestRoute;
 use Dbout\WpRestApi\RouteAction;
+use Dbout\WpRestApi\Wrappers\ReflectionCache;
 
 class AnnotatedRouteRestLoader implements InterfaceLoader
 {
@@ -80,6 +83,7 @@ class AnnotatedRouteRestLoader implements InterfaceLoader
                 continue;
             }
 
+            $this->assertResolvers($method);
             $path = PathCompiler::compile($this->buildPath($route->route, $action->path));
             $actionsByPath[$path][] = $this->createAction($class, $method, $route, $action);
         }
@@ -90,6 +94,36 @@ class AnnotatedRouteRestLoader implements InterfaceLoader
         }
 
         return $routes;
+    }
+
+    /**
+     * Checks the #[Resolve] attributes when routes are loaded, so an invalid
+     * resolver fails at registration time rather than on the first request.
+     *
+     * @param \ReflectionMethod $method
+     * @throws ApiException
+     * @return void
+     */
+    protected function assertResolvers(\ReflectionMethod $method): void
+    {
+        foreach ($method->getParameters() as $parameter) {
+            $attribute = $parameter->getAttributes(Resolve::class)[0] ?? null;
+            if ($attribute === null) {
+                continue;
+            }
+
+            $resolver = $attribute->newInstance()->resolver;
+            if (!ReflectionCache::isParameterResolver($resolver)) {
+                throw new ApiException(sprintf(
+                    'The resolver %s of the argument $%s in %s::%s() must be an existing class implementing %s.',
+                    $resolver,
+                    $parameter->getName(),
+                    $method->getDeclaringClass()->getName(),
+                    $method->getName(),
+                    ParameterResolverInterface::class,
+                ));
+            }
+        }
     }
 
     /**

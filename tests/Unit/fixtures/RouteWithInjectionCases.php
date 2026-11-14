@@ -8,6 +8,8 @@
 
 namespace Dbout\WpRestApi\Tests\Unit\fixtures;
 
+use Dbout\WpRestApi\Attributes\Resolve;
+
 class RouteWithInjectionCases
 {
     public function optional(string $search = '', string $format = 'json'): \WP_REST_Response
@@ -48,5 +50,33 @@ class RouteWithInjectionCases
             'method' => $request->get_method(),
             'sort' => $sort,
         ]);
+    }
+
+    /**
+     * @param array<mixed> $ids
+     */
+    public function arrays(array $ids): \WP_REST_Response
+    {
+        return new \WP_REST_Response(['ids' => $ids]);
+    }
+
+    public function currentUser(\WP_User $user): \WP_REST_Response
+    {
+        return new \WP_REST_Response(['userId' => $user->ID]);
+    }
+
+    public function optionalUser(?\WP_User $user): \WP_REST_Response
+    {
+        return new \WP_REST_Response(['userId' => $user?->ID]);
+    }
+
+    public function resolved(#[Resolve(IdResolver::class)] string $value, int $id = 0): \WP_REST_Response
+    {
+        return new \WP_REST_Response(['value' => $value, 'id' => $id]);
+    }
+
+    public function invalidResolver(#[Resolve(\stdClass::class)] mixed $value): \WP_REST_Response
+    {
+        return new \WP_REST_Response(['value' => $value]);
     }
 }

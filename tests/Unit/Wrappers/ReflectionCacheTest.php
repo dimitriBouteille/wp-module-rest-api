@@ -9,8 +9,10 @@
 namespace Dbout\WpRestApi\Tests\Unit\Wrappers;
 
 use Dbout\WpRestApi\Tests\Unit\fixtures\AlwaysAllowPermission;
+use Dbout\WpRestApi\Tests\Unit\fixtures\IdResolver;
 use Dbout\WpRestApi\Tests\Unit\fixtures\PermissionCallbacks;
 use Dbout\WpRestApi\Tests\Unit\fixtures\RouteWithFatalError;
+use Dbout\WpRestApi\Tests\Unit\fixtures\RouteWithInjectionCases;
 use Dbout\WpRestApi\Wrappers\ParameterDescriptor;
 use Dbout\WpRestApi\Wrappers\ReflectionCache;
 use PHPUnit\Framework\TestCase;
@@ -103,5 +105,26 @@ class ReflectionCacheTest extends TestCase
         // After clear(), the cache is rebuilt — still returning the right answer.
         ReflectionCache::clear();
         $this->assertTrue(ReflectionCache::implementsPermissionInterface(AlwaysAllowPermission::class));
+    }
+
+    /**
+     * @covers ::parameters
+     */
+    public function testResolveAttributeIsCachedInDescriptor(): void
+    {
+        [$value, $id] = ReflectionCache::parameters(RouteWithInjectionCases::class, 'resolved');
+
+        $this->assertSame(IdResolver::class, $value->resolverClass);
+        $this->assertNull($id->resolverClass);
+    }
+
+    /**
+     * @covers ::isParameterResolver
+     */
+    public function testIsParameterResolver(): void
+    {
+        $this->assertTrue(ReflectionCache::isParameterResolver(IdResolver::class));
+        $this->assertFalse(ReflectionCache::isParameterResolver(\stdClass::class));
+        $this->assertFalse(ReflectionCache::isParameterResolver('App\\Missing\\Resolver'));
     }
 }

@@ -223,6 +223,37 @@ class RouteLoaderIntegrationTest extends \WP_UnitTestCase
         $this->assertSame(404, $invalid->get_status(), 'The placeholder pattern MUST be applied by WordPress.');
     }
 
+    public function testResolverCurrentUserAndArrayInjection(): void
+    {
+        $postId = self::factory()->post->create(['post_title' => 'Hello']);
+        (new NamespaceRouteLoader(
+            'Dbout\\WpRestApi\\Tests\\WordPress\\fixtures\\ResolveRoute\\',
+        ))->register();
+        do_action('rest_api_init');
+
+        wp_set_current_user(0);
+        $request = new \WP_REST_Request('GET', sprintf('/integration/v1/posts/%d', $postId));
+        $request->set_query_params(['fields' => 'title,author']);
+        $response = rest_do_request($request);
+        $this->assertSame(200, $response->get_status());
+        $this->assertSame(
+            ['title' => 'Hello', 'userId' => null, 'fields' => ['title', 'author']],
+            $response->get_data(),
+        );
+
+        $missing = rest_do_request(new \WP_REST_Request('GET', '/integration/v1/posts/999999'));
+        $this->assertSame(404, $missing->get_status(), 'A RouteException thrown by a resolver MUST become the response.');
+
+        $loggedOut = rest_do_request(new \WP_REST_Request('DELETE', sprintf('/integration/v1/posts/%d', $postId)));
+        $this->assertSame(401, $loggedOut->get_status(), 'A non-nullable WP_User MUST require a logged-in user.');
+
+        $editor = self::factory()->user->create(['role' => 'editor']);
+        wp_set_current_user($editor);
+        $deleted = rest_do_request(new \WP_REST_Request('DELETE', sprintf('/integration/v1/posts/%d', $postId)));
+        $this->assertSame(200, $deleted->get_status());
+        $this->assertSame(['deletedBy' => $editor], $deleted->get_data());
+    }
+
     public function testNamespaceLoaderRegistersRoutesViaComposer(): void
     {
         (new NamespaceRouteLoader(

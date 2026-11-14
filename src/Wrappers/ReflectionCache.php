@@ -9,7 +9,9 @@
 namespace Dbout\WpRestApi\Wrappers;
 
 use Dbout\WpRestApi\Attributes\Param;
+use Dbout\WpRestApi\Attributes\Resolve;
 use Dbout\WpRestApi\Permissions\PermissionInterface;
+use Dbout\WpRestApi\Resolvers\ParameterResolverInterface;
 
 /**
  * In-process memoization layer for the reflection lookups performed on
@@ -23,6 +25,9 @@ final class ReflectionCache
 
     /** @var array<class-string, bool> */
     private static array $implementsPermissionInterface = [];
+
+    /** @var array<string, bool> */
+    private static array $isParameterResolver = [];
 
     /**
      * Returns the resolved parameter descriptors for the given method.
@@ -44,6 +49,7 @@ final class ReflectionCache
             $type = $parameter->getType();
             $paramAttribute = $parameter->getAttributes(Param::class)[0] ?? null;
             $paramInstance = $paramAttribute?->newInstance();
+            $resolveAttribute = $parameter->getAttributes(Resolve::class)[0] ?? null;
             $descriptors[] = new ParameterDescriptor(
                 name: $parameter->getName(),
                 requestName: $paramInstance instanceof Param && $paramInstance->name !== null
@@ -54,6 +60,7 @@ final class ReflectionCache
                 hasDefaultValue: $parameter->isDefaultValueAvailable(),
                 allowsNull: $type === null || $type->allowsNull(),
                 isVariadic: $parameter->isVariadic(),
+                resolverClass: $resolveAttribute?->newInstance()->resolver,
             );
         }
 
@@ -76,6 +83,22 @@ final class ReflectionCache
     }
 
     /**
+     * Whether the given class exists and implements ParameterResolverInterface.
+     *
+     * @param string $class
+     * @phpstan-assert-if-true class-string<ParameterResolverInterface> $class
+     */
+    public static function isParameterResolver(string $class): bool
+    {
+        if (isset(self::$isParameterResolver[$class])) {
+            return self::$isParameterResolver[$class];
+        }
+
+        return self::$isParameterResolver[$class] = class_exists($class)
+            && (new \ReflectionClass($class))->implementsInterface(ParameterResolverInterface::class);
+    }
+
+    /**
      * Clear the cache. Intended for tests that swap class definitions
      * between scenarios; production code never needs this.
      */
@@ -83,5 +106,6 @@ final class ReflectionCache
     {
         self::$parameters = [];
         self::$implementsPermissionInterface = [];
+        self::$isParameterResolver = [];
     }
 }
