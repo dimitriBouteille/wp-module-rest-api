@@ -53,6 +53,20 @@ class RouteLoaderIntegrationTest extends \WP_UnitTestCase
         $this->assertSame(['secret' => 42], $response->get_data());
     }
 
+    public function testIsPublicActionOverridesRoutePermission(): void
+    {
+        wp_set_current_user(0);
+        (new RouteLoader(self::FIXTURES_DIR . '/PublicActionRoute'))->register();
+        do_action('rest_api_init');
+
+        $public = rest_do_request(new \WP_REST_Request('GET', '/integration/v1/admin/status'));
+        $this->assertSame(200, $public->get_status(), 'An action with IsPublic MUST be reachable when logged out.');
+        $this->assertSame(['status' => 'ok'], $public->get_data());
+
+        $inherited = rest_do_request(new \WP_REST_Request('POST', '/integration/v1/admin/status'));
+        $this->assertSame(401, $inherited->get_status(), 'An action without permission MUST inherit the route one.');
+    }
+
     public function testPathParameterIsExtractedAndCast(): void
     {
         (new RouteLoader(self::FIXTURES_DIR . '/PathParamRoute'))->register();

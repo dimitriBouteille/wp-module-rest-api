@@ -86,7 +86,7 @@ class DocumentController
 - **Attribute-based routing**: `#[Route]` on the class, `#[Action]` on each method, one or several HTTP methods per action.
 - **Argument injection**: URL and request parameters are passed as method arguments and cast to the declared type (`int`, `string`, `float`, `bool`, backed enums). Type a parameter as `\WP_REST_Request` to get the full request.
 - **Parameter schema**: describe arguments with `#[Param]` (required, default, enum, description, sanitize and validate callbacks). They are registered as WordPress route `args`.
-- **Permissions**: built-in role checks (`IsAdministrator`, `IsEditor`, `IsAuthor`, `IsContributor`, `IsSubscriber`), your own `PermissionInterface` classes, or any callable. They can be set on the route or on each action.
+- **Permissions**: built-in role checks (`IsAdministrator`, `IsEditor`, `IsAuthor`, `IsContributor`, `IsSubscriber`), `IsPublic` to open an action on a protected route, your own `PermissionInterface` classes, or any callable. They can be set on the route or on each action.
 - **Error handling**: throw a `RouteException` (or `NotFoundException`) and it becomes a clean JSON error response with the right HTTP status. The [RFC 7807](https://www.rfc-editor.org/rfc/rfc7807) `application/problem+json` format is available through `ProblemJsonFormatter`.
 - **Route discovery**: routes are found from your Composer PSR-4 namespaces. No manual registration.
 - **Cache**: plug any PSR-6 cache pool to skip route discovery in production.

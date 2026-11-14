@@ -9,12 +9,16 @@
 namespace Dbout\WpRestApi\Tests\Unit\Loaders;
 
 use Dbout\WpRestApi\Loaders\AnnotatedRouteRestLoader;
+use Dbout\WpRestApi\Permissions\IsAdministrator;
+use Dbout\WpRestApi\Permissions\IsEditor;
+use Dbout\WpRestApi\Permissions\IsPublic;
 use Dbout\WpRestApi\ParamSpec;
 use Dbout\WpRestApi\Route;
 use Dbout\WpRestApi\Tests\Unit\fixtures\Loaders\SortDirection;
 use Dbout\WpRestApi\Tests\Unit\fixtures\Loaders\WithEnumParam\RouteWithEnumParam;
 use Dbout\WpRestApi\Tests\Unit\fixtures\Loaders\WithIntParams\RouteWithIntParams;
 use Dbout\WpRestApi\Tests\Unit\fixtures\Loaders\WithParams\RouteWithParams;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Loaders\WithPermissions\RouteWithPermissions;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -112,5 +116,48 @@ class AnnotatedRouteRestLoaderTest extends TestCase
             $byRequestName['page']['sanitize_callback'] ?? null,
             'An explicit sanitizeCallback MUST still be used.'
         );
+    }
+
+    /**
+     * @covers ::createAction
+     */
+    public function testActionInheritsRoutePermissionByDefault(): void
+    {
+        $this->assertSame(IsAdministrator::class, $this->permissionsByMethod()['inherited']);
+    }
+
+    /**
+     * @covers ::createAction
+     */
+    public function testActionCanOverrideToPublicViaIsPublic(): void
+    {
+        $this->assertSame(IsPublic::class, $this->permissionsByMethod()['public']);
+    }
+
+    /**
+     * @covers ::createAction
+     */
+    public function testActionPermissionOverridesRoutePermission(): void
+    {
+        $permissions = $this->permissionsByMethod();
+
+        $this->assertSame(IsEditor::class, $permissions['overridden']);
+        $this->assertSame('is_user_logged_in', $permissions['callable']);
+    }
+
+    /**
+     * @return array<string, mixed> Permission callback of each action, keyed by method name.
+     */
+    protected function permissionsByMethod(): array
+    {
+        $route = (new AnnotatedRouteRestLoader())->load(RouteWithPermissions::class);
+        $this->assertInstanceOf(Route::class, $route);
+
+        $permissions = [];
+        foreach ($route->actions as $action) {
+            $permissions[$action->methodName] = $action->permissionCallback;
+        }
+
+        return $permissions;
     }
 }
