@@ -137,7 +137,8 @@ Rules:
 
 - The value is cast to the declared type: `int`, `float`, `string`, `bool`. A `bool` follows WordPress rules: `false`, `0` and an empty string give `false`.
 - A backed enum argument receives the matching case. An unknown value returns a `400` error with the `invalid-parameter` code and the accepted values.
-- Other types (`array`, classes…) receive the raw value.
+- An `array` argument receives an array: a string such as `1,2` is split like WordPress does for the `array` type, and gives `['1', '2']`.
+- Other types (classes…) receive the raw value, except `\WP_REST_Request` and `\WP_User`, see below.
 - Arguments **without a type** are never injected.
 - If the parameter is missing from the request:
     - an argument with a default value keeps it;
@@ -157,6 +158,66 @@ public function update(int $id, \WP_REST_Request $request): \WP_REST_Response
     // ...
 }
 ```
+
+### Getting the current user
+
+Type an argument as `\WP_User` to receive the logged-in user (`wp_get_current_user()`):
+
+```php
+#[Action(Method::DELETE)]
+public function delete(int $id, \WP_User $user): \WP_REST_Response
+{
+    // $user is the logged-in user
+}
+```
+
+- When nobody is logged in, a `\WP_User` argument returns a `401` error with the `not-logged-in` code, before your action runs.
+- Use `?\WP_User` to accept anonymous requests: the argument then receives `null`.
+
+> 💡 This is not a permission check: any logged-in user is accepted. Use a [permission](permissions.md) to restrict the action to some roles.
+
+### Custom resolvers with `#[Resolve]`
+
+To build an argument yourself, for example load a post from its ID, create a class implementing `Dbout\WpRestApi\Resolvers\ParameterResolverInterface`:
+
+```php
+use Dbout\WpRestApi\Exceptions\NotFoundException;
+use Dbout\WpRestApi\Resolvers\ParameterResolverInterface;
+
+class PostResolver implements ParameterResolverInterface
+{
+    public function resolve(\ReflectionParameter $parameter, \WP_REST_Request $request): \WP_Post
+    {
+        $post = get_post((int) $request->get_param('id'));
+        if (!$post instanceof \WP_Post) {
+            throw new NotFoundException('Post');
+        }
+
+        return $post;
+    }
+}
+```
+
+Then add `#[Resolve]` on the argument:
+
+```php
+use Dbout\WpRestApi\Attributes\Resolve;
+
+#[Route('app/v1', '/posts/{id:\d+}')]
+class PostController
+{
+    #[Action(Method::GET)]
+    public function get(#[Resolve(PostResolver::class)] \WP_Post $post): \WP_REST_Response
+    {
+        // $post is loaded, or a 404 was already returned
+    }
+}
+```
+
+- The resolver receives the argument (`\ReflectionParameter`: name, type, attributes) and the request. Its return value is passed to the action, whatever the argument type.
+- `#[Resolve]` wins over every other rule, including the request parameter with the same name.
+- Throw a `RouteException` to return an error, see [Error handling](error-handling.md).
+- The resolver class is checked when routes are loaded: a class that does not exist or does not implement the interface throws an `ApiException`. It is instantiated without arguments.
 
 ## Return value
 

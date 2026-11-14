@@ -10,7 +10,9 @@ namespace Dbout\WpRestApi\Wrappers;
 
 use Dbout\WpRestApi\ErrorFormat\DefaultFormatter;
 use Dbout\WpRestApi\ErrorFormat\ErrorFormatterInterface;
+use Dbout\WpRestApi\Exceptions\ApiException;
 use Dbout\WpRestApi\Exceptions\RouteException;
+use Dbout\WpRestApi\Resolvers\ParameterResolverInterface;
 use Dbout\WpRestApi\RouteAction;
 
 class RestWrapper
@@ -173,12 +175,26 @@ class RestWrapper
         $requestClass = $request::class;
 
         foreach (ReflectionCache::parameters($className, $methodName) as $descriptor) {
-            if ($descriptor->typeName === null || $descriptor->isVariadic) {
+            if ($descriptor->isVariadic) {
+                continue;
+            }
+
+            if ($descriptor->resolverClass !== null) {
+                $dependencies[$descriptor->name] = $this->resolveArgument($descriptor, $className, $methodName, $request);
+                continue;
+            }
+
+            if ($descriptor->typeName === null) {
                 continue;
             }
 
             if ($descriptor->typeName === $requestClass) {
                 $dependencies[$descriptor->name] = $request;
+                continue;
+            }
+
+            if ($descriptor->typeName === \WP_User::class) {
+                $dependencies[$descriptor->name] = $this->injectCurrentUser($descriptor);
                 continue;
             }
 
@@ -224,6 +240,67 @@ class RestWrapper
     }
 
     /**
+     * @param ParameterDescriptor $descriptor
+     * @param class-string $className
+     * @param string $methodName
+     * @param \WP_REST_Request $request
+     * @throws ApiException When the resolver class is invalid.
+     * @throws \ReflectionException
+     * @return mixed
+     */
+    protected function resolveArgument(
+        ParameterDescriptor $descriptor,
+        string $className,
+        string $methodName,
+        \WP_REST_Request $request,
+    ): mixed {
+        $resolverClass = (string) $descriptor->resolverClass;
+        // Already checked when routes are loaded, unless they come from the cache.
+        if (!ReflectionCache::isParameterResolver($resolverClass)) {
+            throw new ApiException(sprintf(
+                'The resolver %s of the argument $%s must implement %s.',
+                $resolverClass,
+                $descriptor->name,
+                ParameterResolverInterface::class,
+            ));
+        }
+
+        $resolver = new $resolverClass();
+        return $resolver->resolve(new \ReflectionParameter([$className, $methodName], $descriptor->name), $request);
+    }
+
+    /**
+     * @param ParameterDescriptor $descriptor
+     * @throws RouteException When nobody is logged in and the argument is not nullable.
+     * @return \WP_User|null
+     */
+    protected function injectCurrentUser(ParameterDescriptor $descriptor): ?\WP_User
+    {
+        $user = $this->currentUser();
+        if ($user instanceof \WP_User || $descriptor->allowsNull) {
+            return $user;
+        }
+
+        throw new RouteException(
+            message: 'You must be logged in.',
+            errorCode: 'not-logged-in',
+            httpStatusCode: 401,
+        );
+    }
+
+    /**
+     * Exposed as a protected method so tests can simulate a logged-in user
+     * without loading pluggable.php.
+     *
+     * @return \WP_User|null Null when nobody is logged in.
+     */
+    protected function currentUser(): ?\WP_User
+    {
+        $user = wp_get_current_user();
+        return $user->exists() ? $user : null;
+    }
+
+    /**
      * @param string $typeName
      * @param mixed $value
      * @return mixed Backed enums return null when the value matches no case.
@@ -251,6 +328,12 @@ class RestWrapper
             'int' => (int)$value,
             'string' => (string)$value,
             'float' => (float)$value,
+            // Same rule as WordPress for the array type: "1,2" gives ['1', '2'].
+            'array' => match (true) {
+                is_array($value) => $value,
+                is_scalar($value) => wp_parse_list((string)$value),
+                default => [],
+            },
             // rest_sanitize_boolean() only changes strings ('false', '0' → false).
             'bool' => is_string($value) ? rest_sanitize_boolean($value) : (bool)$value,
             default => $value,

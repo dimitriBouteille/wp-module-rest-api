@@ -17,6 +17,7 @@ use Dbout\WpRestApi\ParamSpec;
 use Dbout\WpRestApi\Route;
 use Dbout\WpRestApi\Tests\Unit\fixtures\Loaders\SortDirection;
 use Dbout\WpRestApi\Tests\Unit\fixtures\Loaders\WithActionPaths\RouteWithActionPaths;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Loaders\WithInvalidResolver\RouteWithInvalidResolver;
 use Dbout\WpRestApi\Tests\Unit\fixtures\Loaders\WithPlaceholders\RouteWithPlaceholders;
 use Dbout\WpRestApi\Tests\Unit\fixtures\Loaders\WithEnumParam\RouteWithEnumParam;
 use Dbout\WpRestApi\Tests\Unit\fixtures\Loaders\WithIntParams\RouteWithIntParams;
@@ -231,5 +232,17 @@ class AnnotatedRouteRestLoaderTest extends TestCase
             '/countries/(?P<code>[A-Z]{3})' => ['get', 'update'],
             '/countries/(?P<code>[A-Z]{3})/cities/(?P<city>[^/]+)' => ['city'],
         ], $actionsByPath, 'A placeholder and the matching raw regex MUST give the same route.');
+    }
+
+    /**
+     * @covers ::loadRoutes
+     * @covers ::assertResolvers
+     */
+    public function testInvalidResolverClassThrows(): void
+    {
+        $this->expectException(ApiException::class);
+        $this->expectExceptionMessage('The resolver stdClass of the argument $value in ' . RouteWithInvalidResolver::class . '::get() must be an existing class implementing');
+
+        (new AnnotatedRouteRestLoader())->loadRoutes(RouteWithInvalidResolver::class);
     }
 }
