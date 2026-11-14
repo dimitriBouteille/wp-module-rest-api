@@ -84,7 +84,16 @@ class AnnotatedRouteRestLoader implements InterfaceLoader
             }
 
             $this->assertResolvers($method);
-            $path = PathCompiler::compile($this->buildPath($route->route, $action->path));
+            $path = $this->buildPath($route->route, $action->path);
+            if ($path === '/') {
+                throw new ApiException(sprintf(
+                    'The route path of %s::%s() cannot be empty: set a path on #[Route] or #[Action].',
+                    $class->getName(),
+                    $method->getName(),
+                ));
+            }
+
+            $path = PathCompiler::compile($path);
             $actionsByPath[$path][] = $this->createAction($class, $method, $route, $action);
         }
 
@@ -134,7 +143,7 @@ class AnnotatedRouteRestLoader implements InterfaceLoader
      *
      * @param string $routePath
      * @param string|null $actionPath
-     * @return string
+     * @return string '/' when both paths are empty.
      */
     protected function buildPath(string $routePath, ?string $actionPath): string
     {
