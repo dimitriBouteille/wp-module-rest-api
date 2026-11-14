@@ -94,10 +94,7 @@ class NamespaceRouteLoader extends RouteLoader
                     continue;
                 }
 
-                $route = $this->annotationLoader->load($fqcn);
-                if ($route instanceof Route) {
-                    $routes[] = $route;
-                }
+                array_push($routes, ...$this->annotationLoader->loadRoutes($fqcn));
             }
         }
 

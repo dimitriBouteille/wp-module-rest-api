@@ -176,6 +176,38 @@ class RouteLoaderIntegrationTest extends \WP_UnitTestCase
         $this->assertSame('rest_invalid_param', $response->get_data()['code'] ?? null);
     }
 
+    public function testCrudControllerRegistersOneRoutePerPath(): void
+    {
+        wp_set_current_user(0);
+        (new NamespaceRouteLoader(
+            'Dbout\\WpRestApi\\Tests\\WordPress\\fixtures\\CrudRoute\\',
+        ))->register();
+        do_action('rest_api_init');
+
+        $routes = rest_get_server()->get_routes('integration/v1');
+        $this->assertArrayHasKey('/integration/v1/documents', $routes);
+        $this->assertArrayHasKey('/integration/v1/documents/(?P<id>\d+)', $routes);
+
+        $cases = [
+            ['GET', '/integration/v1/documents', 200, ['action' => 'list']],
+            ['POST', '/integration/v1/documents', 200, ['action' => 'create']],
+            ['GET', '/integration/v1/documents/18', 200, ['action' => 'get', 'id' => 18]],
+            ['PUT', '/integration/v1/documents/18', 200, ['action' => 'update', 'id' => 18]],
+            ['PATCH', '/integration/v1/documents/18', 200, ['action' => 'update', 'id' => 18]],
+        ];
+        foreach ($cases as [$method, $path, $status, $data]) {
+            $response = rest_do_request(new \WP_REST_Request($method, $path));
+            $this->assertSame($status, $response->get_status(), sprintf('%s %s', $method, $path));
+            $this->assertSame($data, $response->get_data(), sprintf('%s %s', $method, $path));
+        }
+
+        $delete = rest_do_request(new \WP_REST_Request('DELETE', '/integration/v1/documents/18'));
+        $this->assertSame(401, $delete->get_status(), 'The action permission MUST apply on its own path.');
+
+        $missing = rest_do_request(new \WP_REST_Request('DELETE', '/integration/v1/documents'));
+        $this->assertSame(404, $missing->get_status(), 'DELETE is only declared on the item path.');
+    }
+
     public function testNamespaceLoaderRegistersRoutesViaComposer(): void
     {
         (new NamespaceRouteLoader(

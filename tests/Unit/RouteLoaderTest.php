@@ -8,6 +8,7 @@
 
 namespace Dbout\WpRestApi\Tests\Unit;
 
+use Dbout\WpRestApi\Exceptions\ApiException;
 use Dbout\WpRestApi\Route;
 use Dbout\WpRestApi\RouteAction;
 use Dbout\WpRestApi\RouteLoader;
@@ -267,6 +268,32 @@ class RouteLoaderTest extends TestCase
         }
 
         return $out;
+    }
+
+    /**
+     * @covers ::findRoutes
+     * @covers ::checkRoutes
+     */
+    public function testActionPathsRegisterOneRoutePerFinalPath(): void
+    {
+        $routes = $this->invokeGetRoutes(new RouteLoader(__DIR__ . '/fixtures/Loaders/WithActionPaths'));
+
+        $this->assertSame(
+            ['/documents', '/documents/(?P<id>\d+)'],
+            array_map(static fn (Route $route): string => $route->path, $routes),
+        );
+    }
+
+    /**
+     * @covers ::findRoutes
+     * @covers ::checkRoutes
+     */
+    public function testDuplicateMethodOnSameFinalPathThrows(): void
+    {
+        $this->expectException(ApiException::class);
+        $this->expectExceptionMessage('You cannot use the same method on the URL loader-test/v1/documents/(?P<id>\d+) multiple times.');
+
+        $this->invokeGetRoutes(new RouteLoader(__DIR__ . '/fixtures/Loaders/WithDuplicateActionPath'));
     }
 
     /**
