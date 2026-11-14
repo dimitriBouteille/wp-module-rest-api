@@ -24,12 +24,19 @@ class RouteLoaderOptions
      * @param ErrorFormatterInterface|null $errorFormatter Optional pluggable
      *                    error response shape. Defaults to the historical
      *                    {error: {code, message, data}} envelope.
+     * @param string $cacheVersion Added to the cache key, for example a release
+     *                    number or a git SHA: changing it rebuilds the cache.
+     * @param bool $cacheFingerprint Adds the path, modification time and size of
+     *                    the route files to the cache key, so any change rebuilds
+     *                    the cache. Costs a directory scan on each request.
      */
     public function __construct(
         public ?CacheItemPoolInterface $cache = null,
         public string $cacheKey = self::DEFAULT_CACHE_KEY,
         public bool $debug = false,
         public ?ErrorFormatterInterface $errorFormatter = null,
+        public string $cacheVersion = '',
+        public bool $cacheFingerprint = false,
     ) {
     }
 }
