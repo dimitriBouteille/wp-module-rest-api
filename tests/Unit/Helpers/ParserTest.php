@@ -62,6 +62,11 @@ class ParserTest extends TestCase
             $load('source-4.php'),
             'App\Routes\MyRoute',
         ];
+
+        yield 'With ::class constants and an anonymous class in the body' => [
+            $load('source-5.php'),
+            'App\Routes\MyRoute',
+        ];
     }
 
     /**

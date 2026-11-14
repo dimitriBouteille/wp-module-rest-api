@@ -8,13 +8,22 @@
 
 namespace Dbout\WpRestApi\Tests\Unit\Loaders;
 
+use Dbout\WpRestApi\Exceptions\ApiException;
 use Dbout\WpRestApi\Loaders\AnnotatedRouteRestLoader;
+use Dbout\WpRestApi\Permissions\IsAdministrator;
+use Dbout\WpRestApi\Permissions\IsEditor;
+use Dbout\WpRestApi\Permissions\IsPublic;
 use Dbout\WpRestApi\ParamSpec;
 use Dbout\WpRestApi\Route;
 use Dbout\WpRestApi\Tests\Unit\fixtures\Loaders\SortDirection;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Loaders\WithActionPaths\RouteWithActionPaths;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Loaders\WithEmptyPath\RouteWithEmptyPath;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Loaders\WithInvalidResolver\RouteWithInvalidResolver;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Loaders\WithPlaceholders\RouteWithPlaceholders;
 use Dbout\WpRestApi\Tests\Unit\fixtures\Loaders\WithEnumParam\RouteWithEnumParam;
 use Dbout\WpRestApi\Tests\Unit\fixtures\Loaders\WithIntParams\RouteWithIntParams;
 use Dbout\WpRestApi\Tests\Unit\fixtures\Loaders\WithParams\RouteWithParams;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Loaders\WithPermissions\RouteWithPermissions;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -112,5 +121,141 @@ class AnnotatedRouteRestLoaderTest extends TestCase
             $byRequestName['page']['sanitize_callback'] ?? null,
             'An explicit sanitizeCallback MUST still be used.'
         );
+    }
+
+    /**
+     * @covers ::createAction
+     */
+    public function testActionInheritsRoutePermissionByDefault(): void
+    {
+        $this->assertSame(IsAdministrator::class, $this->permissionsByMethod()['inherited']);
+    }
+
+    /**
+     * @covers ::createAction
+     */
+    public function testActionCanOverrideToPublicViaIsPublic(): void
+    {
+        $this->assertSame(IsPublic::class, $this->permissionsByMethod()['public']);
+    }
+
+    /**
+     * @covers ::createAction
+     */
+    public function testActionPermissionOverridesRoutePermission(): void
+    {
+        $permissions = $this->permissionsByMethod();
+
+        $this->assertSame(IsEditor::class, $permissions['overridden']);
+        $this->assertSame('is_user_logged_in', $permissions['callable']);
+    }
+
+    /**
+     * @return array<string, mixed> Permission callback of each action, keyed by method name.
+     */
+    protected function permissionsByMethod(): array
+    {
+        $route = (new AnnotatedRouteRestLoader())->load(RouteWithPermissions::class);
+        $this->assertInstanceOf(Route::class, $route);
+
+        $permissions = [];
+        foreach ($route->actions as $action) {
+            $permissions[$action->methodName] = $action->permissionCallback;
+        }
+
+        return $permissions;
+    }
+
+    /**
+     * @covers ::loadRoutes
+     * @covers ::buildPath
+     */
+    public function testActionPathCreatesSeparateRoutes(): void
+    {
+        $routes = (new AnnotatedRouteRestLoader())->loadRoutes(RouteWithActionPaths::class);
+
+        $this->assertCount(2, $routes, 'One route per distinct final path.');
+
+        $actionsByPath = [];
+        foreach ($routes as $route) {
+            $this->assertSame('loader-test/v1', $route->namespace);
+            $actionsByPath[$route->path] = array_map(
+                static fn ($action): string => $action->methodName,
+                $route->actions,
+            );
+        }
+
+        $this->assertSame([
+            '/documents' => ['list', 'create'],
+            '/documents/(?P<id>\d+)' => ['get', 'delete'],
+        ], $actionsByPath, 'Paths are joined with a single slash, without leading or trailing slash.');
+
+        $delete = $routes[1]->actions[1];
+        $this->assertSame(IsAdministrator::class, $delete->permissionCallback);
+        $this->assertSame(['DELETE'], $delete->methods);
+    }
+
+    /**
+     * @covers ::load
+     */
+    public function testLoadThrowsWhenClassDeclaresSeveralPaths(): void
+    {
+        $this->expectException(ApiException::class);
+        $this->expectExceptionMessage('loadRoutes()');
+
+        (new AnnotatedRouteRestLoader())->load(RouteWithActionPaths::class);
+    }
+
+    /**
+     * @covers ::loadRoutes
+     * @covers ::buildPath
+     */
+    public function testEmptyFinalPathThrows(): void
+    {
+        $this->expectException(ApiException::class);
+        $this->expectExceptionMessage('The route path of ' . RouteWithEmptyPath::class . '::list() cannot be empty');
+
+        (new AnnotatedRouteRestLoader())->loadRoutes(RouteWithEmptyPath::class);
+    }
+
+    /**
+     * @covers ::loadRoutes
+     */
+    public function testLoadRoutesReturnsEmptyListForClassWithoutRoute(): void
+    {
+        $this->assertSame([], (new AnnotatedRouteRestLoader())->loadRoutes(\stdClass::class));
+    }
+
+    /**
+     * @covers ::loadRoutes
+     */
+    public function testPlaceholdersAreCompiledAndGroupedWithRawRegex(): void
+    {
+        $routes = (new AnnotatedRouteRestLoader())->loadRoutes(RouteWithPlaceholders::class);
+
+        $actionsByPath = [];
+        foreach ($routes as $route) {
+            $actionsByPath[$route->path] = array_map(
+                static fn ($action): string => $action->methodName,
+                $route->actions,
+            );
+        }
+
+        $this->assertSame([
+            '/countries/(?P<code>[A-Z]{3})' => ['get', 'update'],
+            '/countries/(?P<code>[A-Z]{3})/cities/(?P<city>[^/]+)' => ['city'],
+        ], $actionsByPath, 'A placeholder and the matching raw regex MUST give the same route.');
+    }
+
+    /**
+     * @covers ::loadRoutes
+     * @covers ::assertResolvers
+     */
+    public function testInvalidResolverClassThrows(): void
+    {
+        $this->expectException(ApiException::class);
+        $this->expectExceptionMessage('The resolver stdClass of the argument $value in ' . RouteWithInvalidResolver::class . '::get() must be an existing class implementing');
+
+        (new AnnotatedRouteRestLoader())->loadRoutes(RouteWithInvalidResolver::class);
     }
 }

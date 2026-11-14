@@ -8,6 +8,7 @@
 
 namespace Dbout\WpRestApi\Tests\Unit;
 
+use Dbout\WpRestApi\Exceptions\ApiException;
 use Dbout\WpRestApi\Route;
 use Dbout\WpRestApi\RouteAction;
 use Dbout\WpRestApi\RouteLoader;
@@ -35,7 +36,7 @@ class RouteLoaderTest extends TestCase
 
         $this->invokeGetRoutes($loader);
 
-        $stored = $cache->getItem(RouteLoaderOptions::DEFAULT_CACHE_KEY)->get();
+        $stored = $cache->getItem($loader->getCacheKey())->get();
         $this->assertIsString($stored, 'Cache payload must be a string.');
 
         $decoded = json_decode($stored, true);
@@ -78,17 +79,17 @@ class RouteLoaderTest extends TestCase
     public function testCorruptedCachePayloadFallsBackToDiscovery(): void
     {
         $cache = new ArrayCachePool();
-        $item = $cache->getItem(RouteLoaderOptions::DEFAULT_CACHE_KEY);
+        $loader = new RouteLoader(self::FIXTURE_DIR, new RouteLoaderOptions(cache: $cache));
+        $item = $cache->getItem($loader->getCacheKey());
         $item->set('{"this is": not valid json');
         $cache->save($item);
 
-        $loader = new RouteLoader(self::FIXTURE_DIR, new RouteLoaderOptions(cache: $cache));
         $routes = $this->invokeGetRoutes($loader);
 
         $this->assertCount(1, $routes);
         $this->assertSame('test-cache/v1', $routes[0]->namespace);
 
-        $rebuilt = $cache->getItem(RouteLoaderOptions::DEFAULT_CACHE_KEY)->get();
+        $rebuilt = $cache->getItem($loader->getCacheKey())->get();
         $this->assertIsString($rebuilt);
         $this->assertNotSame('{"this is": not valid json', $rebuilt, 'Cache should have been overwritten with a fresh payload.');
         $this->assertIsArray(json_decode($rebuilt, true));
@@ -101,11 +102,11 @@ class RouteLoaderTest extends TestCase
     public function testCachePayloadWithUnexpectedShapeFallsBack(): void
     {
         $cache = new ArrayCachePool();
-        $item = $cache->getItem(RouteLoaderOptions::DEFAULT_CACHE_KEY);
+        $loader = new RouteLoader(self::FIXTURE_DIR, new RouteLoaderOptions(cache: $cache));
+        $item = $cache->getItem($loader->getCacheKey());
         $item->set(json_encode([['namespace' => 'foo']])); // missing "path" and "actions"
         $cache->save($item);
 
-        $loader = new RouteLoader(self::FIXTURE_DIR, new RouteLoaderOptions(cache: $cache));
         $routes = $this->invokeGetRoutes($loader);
 
         $this->assertCount(1, $routes);
@@ -119,11 +120,11 @@ class RouteLoaderTest extends TestCase
     public function testCachePayloadWithEmptyPathFallsBack(): void
     {
         $cache = new ArrayCachePool();
-        $item = $cache->getItem(RouteLoaderOptions::DEFAULT_CACHE_KEY);
+        $loader = new RouteLoader(self::FIXTURE_DIR, new RouteLoaderOptions(cache: $cache));
+        $item = $cache->getItem($loader->getCacheKey());
         $item->set(json_encode([['namespace' => 'foo/v1', 'path' => '', 'actions' => []]]));
         $cache->save($item);
 
-        $loader = new RouteLoader(self::FIXTURE_DIR, new RouteLoaderOptions(cache: $cache));
         $routes = $this->invokeGetRoutes($loader);
 
         $this->assertCount(1, $routes);
@@ -166,7 +167,7 @@ class RouteLoaderTest extends TestCase
             restore_error_handler();
         }
 
-        $this->assertFalse($cache->getItem(RouteLoaderOptions::DEFAULT_CACHE_KEY)->isHit());
+        $this->assertFalse($cache->getItem($loader->getCacheKey())->isHit());
     }
 
     /**
@@ -267,6 +268,116 @@ class RouteLoaderTest extends TestCase
         }
 
         return $out;
+    }
+
+    /**
+     * @covers ::findRoutes
+     * @covers ::checkRoutes
+     */
+    public function testActionPathsRegisterOneRoutePerFinalPath(): void
+    {
+        $routes = $this->invokeGetRoutes(new RouteLoader(__DIR__ . '/fixtures/Loaders/WithActionPaths'));
+
+        $this->assertSame(
+            ['/documents', '/documents/(?P<id>\d+)'],
+            array_map(static fn (Route $route): string => $route->path, $routes),
+        );
+    }
+
+    /**
+     * @covers ::findRoutes
+     * @covers ::checkRoutes
+     */
+    public function testDuplicateMethodOnSameFinalPathThrows(): void
+    {
+        $this->expectException(ApiException::class);
+        $this->expectExceptionMessage('You cannot use the same method on the URL loader-test/v1/documents/(?P<id>\d+) multiple times.');
+
+        $this->invokeGetRoutes(new RouteLoader(__DIR__ . '/fixtures/Loaders/WithDuplicateActionPath'));
+    }
+
+    /**
+     * @covers ::getCacheKey
+     */
+    public function testCacheKeyIsPrefixedWithTheConfiguredKey(): void
+    {
+        $key = (new RouteLoader(self::FIXTURE_DIR, new RouteLoaderOptions(cacheKey: 'my_routes')))->getCacheKey();
+
+        $this->assertMatchesRegularExpression('/^my_routes_[a-f0-9]{32}$/', $key, 'The key MUST only use PSR-6 safe characters.');
+        $this->assertSame($key, (new RouteLoader(self::FIXTURE_DIR, new RouteLoaderOptions(cacheKey: 'my_routes')))->getCacheKey());
+    }
+
+    /**
+     * @covers ::getRoutes
+     * @covers ::getCacheKey
+     */
+    public function testCacheVersionChangesKey(): void
+    {
+        $cache = new ArrayCachePool();
+        $v1 = new RouteLoader(self::FIXTURE_DIR, new RouteLoaderOptions(cache: $cache, cacheVersion: '1.0.0'));
+        $this->invokeGetRoutes($v1);
+
+        $v2 = new RouteLoader('/path/that/does/not/exist', new RouteLoaderOptions(cache: $cache, cacheVersion: '1.0.1'));
+        $this->assertNotSame($v1->getCacheKey(), $v2->getCacheKey());
+
+        // The v1 entry is ignored: routes are discovered again, and the bogus directory has none.
+        $this->assertSame([], $this->invokeGetRoutes($v2));
+        $this->assertCount(1, $this->invokeGetRoutes($v1), 'The v1 entry MUST still be served to v1.');
+    }
+
+    /**
+     * @covers ::getCacheKey
+     * @covers ::packageVersion
+     */
+    public function testPackageVersionChangesKey(): void
+    {
+        $current = new RouteLoader(self::FIXTURE_DIR);
+        $upgraded = new class (self::FIXTURE_DIR) extends RouteLoader {
+            protected static function packageVersion(): string
+            {
+                return '99.0.0@abcdef';
+            }
+        };
+
+        $this->assertNotSame($current->getCacheKey(), $upgraded->getCacheKey());
+    }
+
+    /**
+     * @covers ::getCacheKey
+     * @covers ::fingerprint
+     * @covers ::routeFiles
+     */
+    public function testFingerprintChangesWhenFileIsTouched(): void
+    {
+        $directory = sys_get_temp_dir() . '/wp-rest-api-fingerprint-' . uniqid();
+        mkdir($directory . '/Sub', 0777, true);
+        $file = $directory . '/Sub/Route.php';
+        file_put_contents($file, '<?php');
+        touch($file, 1_700_000_000);
+
+        try {
+            $withFingerprint = new RouteLoader($directory, new RouteLoaderOptions(cacheFingerprint: true));
+            $withoutFingerprint = new RouteLoader($directory);
+            $before = $withFingerprint->getCacheKey();
+            $beforeWithout = $withoutFingerprint->getCacheKey();
+
+            touch($file, 1_700_000_100);
+            $afterTouch = $withFingerprint->getCacheKey();
+            $this->assertNotSame($before, $afterTouch, 'Touching a route file MUST change the key.');
+
+            file_put_contents($directory . '/NewRoute.php', '<?php');
+            $this->assertNotSame($afterTouch, $withFingerprint->getCacheKey(), 'Adding a route file MUST change the key.');
+
+            $beforeText = $withFingerprint->getCacheKey();
+            file_put_contents($directory . '/notes.txt', 'ignored');
+            $this->assertSame($beforeText, $withFingerprint->getCacheKey(), 'Non-PHP files MUST NOT change the key.');
+
+            $this->assertSame($beforeWithout, $withoutFingerprint->getCacheKey(), 'Without the option, files MUST NOT change the key.');
+        } finally {
+            array_map('unlink', array_filter(glob($directory . '/{,Sub/}*', \GLOB_BRACE) ?: [], 'is_file'));
+            rmdir($directory . '/Sub');
+            rmdir($directory);
+        }
     }
 
     /**

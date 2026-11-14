@@ -53,6 +53,20 @@ class RouteLoaderIntegrationTest extends \WP_UnitTestCase
         $this->assertSame(['secret' => 42], $response->get_data());
     }
 
+    public function testIsPublicActionOverridesRoutePermission(): void
+    {
+        wp_set_current_user(0);
+        (new RouteLoader(self::FIXTURES_DIR . '/PublicActionRoute'))->register();
+        do_action('rest_api_init');
+
+        $public = rest_do_request(new \WP_REST_Request('GET', '/integration/v1/admin/status'));
+        $this->assertSame(200, $public->get_status(), 'An action with IsPublic MUST be reachable when logged out.');
+        $this->assertSame(['status' => 'ok'], $public->get_data());
+
+        $inherited = rest_do_request(new \WP_REST_Request('POST', '/integration/v1/admin/status'));
+        $this->assertSame(401, $inherited->get_status(), 'An action without permission MUST inherit the route one.');
+    }
+
     public function testPathParameterIsExtractedAndCast(): void
     {
         (new RouteLoader(self::FIXTURES_DIR . '/PathParamRoute'))->register();
@@ -160,6 +174,84 @@ class RouteLoaderIntegrationTest extends \WP_UnitTestCase
 
         $this->assertSame(400, $response->get_status(), 'A non-numeric value MUST be rejected by WordPress.');
         $this->assertSame('rest_invalid_param', $response->get_data()['code'] ?? null);
+    }
+
+    public function testCrudControllerRegistersOneRoutePerPath(): void
+    {
+        wp_set_current_user(0);
+        (new NamespaceRouteLoader(
+            'Dbout\\WpRestApi\\Tests\\WordPress\\fixtures\\CrudRoute\\',
+        ))->register();
+        do_action('rest_api_init');
+
+        $routes = rest_get_server()->get_routes('integration/v1');
+        $this->assertArrayHasKey('/integration/v1/documents', $routes);
+        $this->assertArrayHasKey('/integration/v1/documents/(?P<id>\d+)', $routes);
+
+        $cases = [
+            ['GET', '/integration/v1/documents', 200, ['action' => 'list']],
+            ['POST', '/integration/v1/documents', 200, ['action' => 'create']],
+            ['GET', '/integration/v1/documents/18', 200, ['action' => 'get', 'id' => 18]],
+            ['PUT', '/integration/v1/documents/18', 200, ['action' => 'update', 'id' => 18]],
+            ['PATCH', '/integration/v1/documents/18', 200, ['action' => 'update', 'id' => 18]],
+        ];
+        foreach ($cases as [$method, $path, $status, $data]) {
+            $response = rest_do_request(new \WP_REST_Request($method, $path));
+            $this->assertSame($status, $response->get_status(), sprintf('%s %s', $method, $path));
+            $this->assertSame($data, $response->get_data(), sprintf('%s %s', $method, $path));
+        }
+
+        $delete = rest_do_request(new \WP_REST_Request('DELETE', '/integration/v1/documents/18'));
+        $this->assertSame(401, $delete->get_status(), 'The action permission MUST apply on its own path.');
+
+        $missing = rest_do_request(new \WP_REST_Request('DELETE', '/integration/v1/documents'));
+        $this->assertSame(404, $missing->get_status(), 'DELETE is only declared on the item path.');
+    }
+
+    public function testPathPlaceholdersAreResolvedAndInjected(): void
+    {
+        (new NamespaceRouteLoader(
+            'Dbout\\WpRestApi\\Tests\\WordPress\\fixtures\\PlaceholderRoute\\',
+        ))->register();
+        do_action('rest_api_init');
+
+        $response = rest_do_request(new \WP_REST_Request('GET', '/integration/v1/articles/18/comments/first-comment'));
+        $this->assertSame(200, $response->get_status());
+        $this->assertSame(['id' => 18, 'slug' => 'first-comment'], $response->get_data());
+
+        $invalid = rest_do_request(new \WP_REST_Request('GET', '/integration/v1/articles/abc/comments/first-comment'));
+        $this->assertSame(404, $invalid->get_status(), 'The placeholder pattern MUST be applied by WordPress.');
+    }
+
+    public function testResolverCurrentUserAndArrayInjection(): void
+    {
+        $postId = self::factory()->post->create(['post_title' => 'Hello']);
+        (new NamespaceRouteLoader(
+            'Dbout\\WpRestApi\\Tests\\WordPress\\fixtures\\ResolveRoute\\',
+        ))->register();
+        do_action('rest_api_init');
+
+        wp_set_current_user(0);
+        $request = new \WP_REST_Request('GET', sprintf('/integration/v1/posts/%d', $postId));
+        $request->set_query_params(['fields' => 'title,author']);
+        $response = rest_do_request($request);
+        $this->assertSame(200, $response->get_status());
+        $this->assertSame(
+            ['title' => 'Hello', 'userId' => null, 'fields' => ['title', 'author']],
+            $response->get_data(),
+        );
+
+        $missing = rest_do_request(new \WP_REST_Request('GET', '/integration/v1/posts/999999'));
+        $this->assertSame(404, $missing->get_status(), 'A RouteException thrown by a resolver MUST become the response.');
+
+        $loggedOut = rest_do_request(new \WP_REST_Request('DELETE', sprintf('/integration/v1/posts/%d', $postId)));
+        $this->assertSame(401, $loggedOut->get_status(), 'A non-nullable WP_User MUST require a logged-in user.');
+
+        $editor = self::factory()->user->create(['role' => 'editor']);
+        wp_set_current_user($editor);
+        $deleted = rest_do_request(new \WP_REST_Request('DELETE', sprintf('/integration/v1/posts/%d', $postId)));
+        $this->assertSame(200, $deleted->get_status());
+        $this->assertSame(['deletedBy' => $editor], $deleted->get_data());
     }
 
     public function testNamespaceLoaderRegistersRoutesViaComposer(): void

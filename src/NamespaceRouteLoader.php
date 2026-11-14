@@ -94,10 +94,7 @@ class NamespaceRouteLoader extends RouteLoader
                     continue;
                 }
 
-                $route = $this->annotationLoader->load($fqcn);
-                if ($route instanceof Route) {
-                    $routes[] = $route;
-                }
+                array_push($routes, ...$this->annotationLoader->loadRoutes($fqcn));
             }
         }
 
@@ -120,24 +117,8 @@ class NamespaceRouteLoader extends RouteLoader
                 continue;
             }
 
-            $iterator = new \RecursiveIteratorIterator(
-                new \RecursiveCallbackFilterIterator(
-                    new \RecursiveDirectoryIterator(
-                        $directory,
-                        \FilesystemIterator::SKIP_DOTS | \FilesystemIterator::FOLLOW_SYMLINKS,
-                    ),
-                    static fn (\SplFileInfo $current): bool => !str_starts_with($current->getBasename(), '.'),
-                ),
-                \RecursiveIteratorIterator::LEAVES_ONLY,
-            );
-
             $basePath = rtrim((string) realpath($directory), DIRECTORY_SEPARATOR);
-            foreach ($iterator as $file) {
-                /** @var \SplFileInfo $file */
-                if (!$file->isFile() || $file->getExtension() !== 'php') {
-                    continue;
-                }
-
+            foreach (self::findPhpFiles($directory) as $file) {
                 $real = $file->getRealPath();
                 if ($real === false) {
                     continue;
@@ -146,6 +127,20 @@ class NamespaceRouteLoader extends RouteLoader
                 $relative = substr($real, strlen($basePath) + 1, -4);
                 $suffix = str_replace(DIRECTORY_SEPARATOR, '\\', $relative);
                 yield $namespace . $suffix;
+            }
+        }
+    }
+
+    /**
+     * @inheritDoc
+     */
+    protected function routeFiles(): iterable
+    {
+        foreach ($this->namespaces as $namespace) {
+            foreach ($this->resolveDirectoriesFor($namespace) as $directory) {
+                foreach (self::findPhpFiles($directory) as $file) {
+                    yield $file->getPathname();
+                }
             }
         }
     }

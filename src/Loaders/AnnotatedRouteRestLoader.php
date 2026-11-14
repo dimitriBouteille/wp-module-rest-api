@@ -10,21 +10,54 @@ namespace Dbout\WpRestApi\Loaders;
 
 use Dbout\WpRestApi\Attributes\Action;
 use Dbout\WpRestApi\Attributes\Param;
+use Dbout\WpRestApi\Attributes\Resolve;
 use Dbout\WpRestApi\Attributes\Route;
 use Dbout\WpRestApi\Enums\Method;
+use Dbout\WpRestApi\Exceptions\ApiException;
+use Dbout\WpRestApi\Helpers\PathCompiler;
 use Dbout\WpRestApi\ParamSpec;
+use Dbout\WpRestApi\Resolvers\ParameterResolverInterface;
 use Dbout\WpRestApi\Route as RestRoute;
 use Dbout\WpRestApi\RouteAction;
+use Dbout\WpRestApi\Wrappers\ReflectionCache;
 
 class AnnotatedRouteRestLoader implements InterfaceLoader
 {
     /**
+     * Loads a class declaring a single path.
+     *
      * @inheritDoc
+     * @deprecated Use {@see loadRoutes()}, which supports #[Action(path: ...)].
+     * @throws ApiException When the class declares several paths with #[Action(path: ...)].
      */
     public function load($resource): ?RestRoute
     {
-        if (!class_exists($resource)) {
-            throw new \InvalidArgumentException(sprintf('Class "%s" does not exist.', $resource));
+        $routes = $this->loadRoutes($resource);
+        if (count($routes) > 1) {
+            throw new ApiException(sprintf(
+                'Class "%s" declares several paths with #[Action(path: ...)], use %s::loadRoutes() to load them.',
+                $resource,
+                self::class,
+            ));
+        }
+
+        return $routes[0] ?? null;
+    }
+
+    /**
+     * Loads the routes of a class: one route per final path, the #[Route]
+     * path followed by the optional #[Action] path. Placeholders such as
+     * `{id:\d+}` are compiled here, so cached routes hold the final regex.
+     *
+     * @param mixed $resource Class name.
+     * @throws \InvalidArgumentException When the class does not exist or is abstract.
+     * @throws ApiException When a final path is empty or has an invalid placeholder.
+     * @return list<RestRoute> Empty when the class has no #[Route] or no #[Action].
+     */
+    public function loadRoutes(mixed $resource): array
+    {
+        if (!is_string($resource) || !class_exists($resource)) {
+            throw new \InvalidArgumentException(sprintf('Class "%s" does not exist.', is_string($resource) ? $resource : get_debug_type($resource)));
         }
 
         $class = new \ReflectionClass($resource);
@@ -38,10 +71,11 @@ class AnnotatedRouteRestLoader implements InterfaceLoader
         $route = $class->getAttributes(Route::class, \ReflectionAttribute::IS_INSTANCEOF)[0] ?? null;
         $route = $route?->newInstance();
         if (!$route instanceof Route) {
-            return null;
+            return [];
         }
 
-        $actions = [];
+        /** @var array<string, list<RouteAction>> $actionsByPath */
+        $actionsByPath = [];
         foreach ($class->getMethods(\ReflectionMethod::IS_PUBLIC) as $method) {
             $action = $method->getAttributes(Action::class)[0] ?? null;
             $action = $action?->newInstance();
@@ -49,20 +83,83 @@ class AnnotatedRouteRestLoader implements InterfaceLoader
                 continue;
             }
 
-            $actions[] = $this->createAction($class, $method, $route, $action);
+            $this->assertResolvers($method);
+            $path = $this->buildPath($route->route, $action->path);
+            if ($path === '/') {
+                throw new ApiException(sprintf(
+                    'The route path of %s::%s() cannot be empty: set a path on #[Route] or #[Action].',
+                    $class->getName(),
+                    $method->getName(),
+                ));
+            }
+
+            $path = PathCompiler::compile($path);
+            $actionsByPath[$path][] = $this->createAction($class, $method, $route, $action);
         }
 
-        if ($actions === []) {
-            return null;
+        $routes = [];
+        foreach ($actionsByPath as $path => $actions) {
+            $routes[] = new RestRoute($route->namespace, (string) $path, $actions);
         }
 
-        return $this->createRoute($route, $actions);
+        return $routes;
+    }
+
+    /**
+     * Checks the #[Resolve] attributes when routes are loaded, so an invalid
+     * resolver fails at registration time rather than on the first request.
+     *
+     * @param \ReflectionMethod $method
+     * @throws ApiException
+     * @return void
+     */
+    protected function assertResolvers(\ReflectionMethod $method): void
+    {
+        foreach ($method->getParameters() as $parameter) {
+            $attribute = $parameter->getAttributes(Resolve::class)[0] ?? null;
+            if ($attribute === null) {
+                continue;
+            }
+
+            $resolver = $attribute->newInstance()->resolver;
+            if (!ReflectionCache::isParameterResolver($resolver)) {
+                throw new ApiException(sprintf(
+                    'The resolver %s of the argument $%s in %s::%s() must be an existing class implementing %s.',
+                    $resolver,
+                    $parameter->getName(),
+                    $method->getDeclaringClass()->getName(),
+                    $method->getName(),
+                    ParameterResolverInterface::class,
+                ));
+            }
+        }
+    }
+
+    /**
+     * Joins the #[Route] path and the #[Action] path with a single slash.
+     *
+     * Leading and trailing slashes are trimmed as register_rest_route() does,
+     * so '/documents/' and 'documents' give the same route.
+     *
+     * @param string $routePath
+     * @param string|null $actionPath
+     * @return string '/' when both paths are empty.
+     */
+    protected function buildPath(string $routePath, ?string $actionPath): string
+    {
+        $segments = array_filter(
+            [trim($routePath, '/'), trim($actionPath ?? '', '/')],
+            static fn (string $segment): bool => $segment !== '',
+        );
+
+        return '/' . implode('/', $segments);
     }
 
     /**
      * @param Route $route
      * @param array<RouteAction> $actions
      * @return RestRoute
+     * @deprecated Not used anymore: routes are built by {@see loadRoutes()}.
      */
     protected function createRoute(Route $route, array $actions): RestRoute
     {

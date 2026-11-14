@@ -10,6 +10,7 @@ namespace Dbout\WpRestApi\Tests\Unit;
 
 use Composer\Autoload\ClassLoader;
 use Dbout\WpRestApi\NamespaceRouteLoader;
+use Dbout\WpRestApi\RouteLoaderOptions;
 use Dbout\WpRestApi\Route;
 use PHPUnit\Framework\TestCase;
 
@@ -39,6 +40,25 @@ class NamespaceRouteLoaderTest extends TestCase
         $this->assertArrayHasKey('/ping', $byPath);
         $this->assertArrayHasKey('/pong', $byPath);
         $this->assertSame('namespace-loader/v1', $byPath['/ping']->namespace);
+    }
+
+    /**
+     * @covers ::routeFiles
+     */
+    public function testRouteFilesListsTheNamespaceFiles(): void
+    {
+        $loader = new NamespaceRouteLoader(self::FIXTURE_NS . 'Pings\\', new RouteLoaderOptions(cacheFingerprint: true));
+
+        $method = new \ReflectionMethod(NamespaceRouteLoader::class, 'routeFiles');
+        $method->setAccessible(true);
+        $files = array_map('basename', iterator_to_array($method->invoke($loader), false));
+        sort($files);
+
+        $this->assertSame(['PingRoute.php', 'PongRoute.php'], $files, 'Only the files of the scanned namespace MUST be fingerprinted.');
+        $this->assertNotSame(
+            (new NamespaceRouteLoader(self::FIXTURE_NS . 'Pings\\'))->getCacheKey(),
+            $loader->getCacheKey(),
+        );
     }
 
     /**

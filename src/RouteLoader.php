@@ -8,6 +8,7 @@
 
 namespace Dbout\WpRestApi;
 
+use Composer\InstalledVersions;
 use Dbout\WpRestApi\ErrorFormat\DefaultFormatter;
 use Dbout\WpRestApi\Exceptions\ApiException;
 use Dbout\WpRestApi\Helpers\FileLocator;
@@ -19,6 +20,8 @@ use Psr\Cache\InvalidArgumentException;
 
 class RouteLoader
 {
+    private const PACKAGE_NAME = 'dbout/wp-module-rest-api';
+
     /**
      * @param string|array<string> $routeDirectory
      * @param RouteLoaderOptions|null $options
@@ -45,8 +48,7 @@ class RouteLoader
             return $this->findRoutes();
         }
 
-        $cacheKey = $this->options->cacheKey;
-        $cacheRoutes = $cache->getItem($cacheKey);
+        $cacheRoutes = $cache->getItem($this->getCacheKey());
         if ($cacheRoutes->isHit()) {
             $payload = $cacheRoutes->get();
             $hydrated = is_string($payload) ? $this->hydrateRoutes($payload) : null;
@@ -63,6 +65,109 @@ class RouteLoader
         }
 
         return $routes;
+    }
+
+    /**
+     * Key of the route cache item: the configured cacheKey followed by a hash
+     * of what can change the routes, so a deployment rebuilds the cache:
+     * the package version, the cacheVersion option and, when cacheFingerprint
+     * is enabled, the route files.
+     *
+     * @return string
+     */
+    public function getCacheKey(): string
+    {
+        $options = $this->options ?? new RouteLoaderOptions();
+        $parts = [static::packageVersion(), $options->cacheVersion];
+        if ($options->cacheFingerprint) {
+            $parts[] = $this->fingerprint();
+        }
+
+        return sprintf('%s_%s', $options->cacheKey, hash('xxh128', implode('|', $parts)));
+    }
+
+    /**
+     * Version and git reference of the installed package: in a dev install
+     * (dev-develop), only the reference changes between two updates.
+     *
+     * @return string
+     */
+    protected static function packageVersion(): string
+    {
+        if (!class_exists(InstalledVersions::class) || !InstalledVersions::isInstalled(self::PACKAGE_NAME)) {
+            return '';
+        }
+
+        return sprintf(
+            '%s@%s',
+            InstalledVersions::getVersion(self::PACKAGE_NAME) ?? '',
+            InstalledVersions::getReference(self::PACKAGE_NAME) ?? '',
+        );
+    }
+
+    /**
+     * Hash of the path, modification time and size of every route file.
+     *
+     * @return string
+     */
+    protected function fingerprint(): string
+    {
+        clearstatcache();
+
+        $entries = [];
+        foreach ($this->routeFiles() as $file) {
+            $entries[] = sprintf('%s:%d:%d', $file, (int) @filemtime($file), (int) @filesize($file));
+        }
+
+        sort($entries);
+        return hash('xxh128', implode("\n", $entries));
+    }
+
+    /**
+     * PHP files that can declare routes, used by the cache fingerprint.
+     *
+     * @return iterable<string>
+     */
+    protected function routeFiles(): iterable
+    {
+        $directories = is_array($this->routeDirectory) ? $this->routeDirectory : [$this->routeDirectory];
+        foreach ($directories as $pattern) {
+            foreach (glob($pattern) ?: [] as $directory) {
+                foreach (self::findPhpFiles($directory) as $file) {
+                    yield $file->getPathname();
+                }
+            }
+        }
+    }
+
+    /**
+     * @param string $directory
+     * @return \Generator<\SplFileInfo> PHP files of the directory and its sub-directories,
+     *                                    hidden files and directories excluded.
+     */
+    protected static function findPhpFiles(string $directory): \Generator
+    {
+        if (!is_dir($directory)) {
+            return;
+        }
+
+        $iterator = new \RecursiveIteratorIterator(
+            new \RecursiveCallbackFilterIterator(
+                new \RecursiveDirectoryIterator(
+                    $directory,
+                    \FilesystemIterator::SKIP_DOTS | \FilesystemIterator::FOLLOW_SYMLINKS,
+                ),
+                static fn (\SplFileInfo $current): bool => !str_starts_with($current->getBasename(), '.'),
+            ),
+            \RecursiveIteratorIterator::LEAVES_ONLY,
+        );
+
+        foreach ($iterator as $file) {
+            /** @var \SplFileInfo $file */
+            if ($file->isFile() && $file->getExtension() === 'php') {
+                yield $file;
+            }
+        }
     }
 
     /**
@@ -320,9 +425,10 @@ class RouteLoader
                 }
 
                 throw new ApiException(sprintf(
-                    'You cannot use the same method on the URL %s/%s multiple times.',
+                    'You cannot use the same method on the URL %s/%s multiple times. Check the #[Action] methods and paths of %s.',
                     $route->namespace,
-                    $route->path
+                    ltrim($route->path, '/'),
+                    is_string($action->className) ? $action->className : 'the route class',
                 ));
             }
         }

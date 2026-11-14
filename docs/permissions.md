@@ -14,7 +14,7 @@ use Dbout\WpRestApi\Attributes\Route;
 use Dbout\WpRestApi\Enums\Method;
 use Dbout\WpRestApi\Permissions\IsAdministrator;
 
-#[Route('app/v1', '/admin/documents/(?P<id>\d+)', permissionCallback: IsAdministrator::class)]
+#[Route('app/v1', '/admin/documents/{id:\d+}', permissionCallback: IsAdministrator::class)]
 class AdminDocumentController
 {
     #[Action(Method::GET)]
@@ -39,7 +39,7 @@ Set `permissionCallback` on `#[Action]`. It **replaces** the route permission fo
 use Dbout\WpRestApi\Permissions\IsAdministrator;
 use Dbout\WpRestApi\Permissions\IsAuthor;
 
-#[Route('app/v1', '/documents/(?P<id>\d+)', permissionCallback: IsAuthor::class)]
+#[Route('app/v1', '/documents/{id:\d+}', permissionCallback: IsAuthor::class)]
 class DocumentController
 {
     #[Action(Method::GET)]
@@ -56,9 +56,42 @@ class DocumentController
 }
 ```
 
+## Making an action public
+
+An action without `permissionCallback` inherits the route permission: setting `permissionCallback: null` does the same. To make an action public on a protected route, use `IsPublic`:
+
+```php
+use Dbout\WpRestApi\Permissions\IsAdministrator;
+use Dbout\WpRestApi\Permissions\IsPublic;
+
+#[Route('app/v1', '/admin/status', permissionCallback: IsAdministrator::class)]
+class StatusController
+{
+    #[Action(Method::GET, permissionCallback: IsPublic::class)]
+    public function get(): \WP_REST_Response
+    {
+        // Everyone, logged in or not
+    }
+
+    #[Action(Method::POST)]
+    public function update(): \WP_REST_Response
+    {
+        // Administrators only (route permission)
+    }
+}
+```
+
+In short:
+
+| `permissionCallback` on `#[Action]` | Permission used        |
+|-------------------------------------|------------------------|
+| omitted or `null`                   | the route permission   |
+| `IsPublic::class`                   | none, everyone         |
+| any other value                     | that value             |
+
 ## Built-in permissions
 
-All in the `Dbout\WpRestApi\Permissions` namespace. Each one calls `current_user_can()` with the matching role:
+All in the `Dbout\WpRestApi\Permissions` namespace:
 
 | Class             | Check                                  |
 |-------------------|----------------------------------------|
@@ -67,6 +100,7 @@ All in the `Dbout\WpRestApi\Permissions` namespace. Each one calls `current_user
 | `IsAuthor`        | `current_user_can('author')`           |
 | `IsContributor`   | `current_user_can('contributor')`      |
 | `IsSubscriber`    | `current_user_can('subscriber')`       |
+| `IsPublic`        | none: allows everyone                  |
 
 > 💡 For an external client (mobile app, headless front…), the user must be authenticated, for example with [application passwords](https://make.wordpress.org/core/2020/11/05/application-passwords-integration-guide/). Requests from the WordPress admin need the `X-WP-Nonce` header.
 

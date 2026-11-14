@@ -11,6 +11,8 @@ $options = new RouteLoaderOptions(
     cacheKey: 'wp_autoloader_routes',
     debug: false,
     errorFormatter: null,
+    cacheVersion: '',
+    cacheFingerprint: false,
 );
 
 (new NamespaceRouteLoader('App\\Routes\\', $options))->register();
@@ -19,9 +21,11 @@ $options = new RouteLoaderOptions(
 | Option           | Type                                  | Default                  | Description                                         |
 |------------------|---------------------------------------|--------------------------|-----------------------------------------------------|
 | `cache`          | `?Psr\Cache\CacheItemPoolInterface`   | `null`                   | Caches discovered routes, see [Cache](#cache).      |
-| `cacheKey`       | `string`                              | `'wp_autoloader_routes'` | Key used to store the routes in the cache.          |
+| `cacheKey`       | `string`                              | `'wp_autoloader_routes'` | Prefix of the key used to store the routes in the cache. |
 | `debug`          | `bool`                                | `false`                  | Shows unexpected errors, see [Debug](#debug).       |
 | `errorFormatter` | `?ErrorFormatterInterface`            | `DefaultFormatter`       | Format of error responses, see [Error handling](error-handling.md#rfc-7807-format). |
+| `cacheVersion`   | `string`                              | `''`                     | Added to the cache key: changing it rebuilds the cache, see [Cache invalidation](#cache-invalidation). |
+| `cacheFingerprint` | `bool`                              | `false`                  | Rebuilds the cache when a route file changes, see [Cache invalidation](#cache-invalidation). |
 
 ## Cache
 
@@ -43,9 +47,29 @@ $options = new RouteLoaderOptions(
 
 Things to know:
 
-- The module sets no expiration on the cache item: it lives as long as your pool's default lifetime allows. Clear the cache on each deployment, otherwise new or changed routes are ignored.
+- The module sets no expiration on the cache item: it lives as long as your pool's default lifetime allows. See [Cache invalidation](#cache-invalidation) to rebuild it after a deployment.
 - If you register several loaders with the same cache pool, give each one its own `cacheKey`.
 - A route whose `permissionCallback` or `#[Param]` callbacks cannot be stored (for example an object) is not cached: the loader triggers a warning and scans the routes on every request.
+
+### Cache invalidation
+
+The cache key is your `cacheKey` followed by a hash of what can change the routes, so a new key, and a new scan, is used when one of them changes:
+
+- **The module version**: upgrading `dbout/wp-module-rest-api` rebuilds the cache.
+- **`cacheVersion`**: pass your release number or git SHA, and each deployment rebuilds the cache.
+
+```php
+$options = new RouteLoaderOptions(
+    cache: new FilesystemAdapter(directory: WP_CONTENT_DIR . '/cache/rest-api'),
+    cacheVersion: (string) getenv('APP_VERSION'),
+);
+```
+
+- **`cacheFingerprint: true`**: adds the path, modification time and size of your route files. Any change to a route file rebuilds the cache, without a release number. It costs a directory scan on each request, much cheaper than reading the attributes, but not free: prefer `cacheVersion` when you have one.
+
+The loader's `getCacheKey()` method returns the key in use, for example to delete the item from your pool.
+
+> ⚠️ Entries stored under a previous key are not deleted: they stay in the pool until it expires them. Set a default lifetime on your pool, or clear it from time to time.
 
 ## Debug
 
