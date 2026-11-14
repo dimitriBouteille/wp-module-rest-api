@@ -17,6 +17,7 @@ use Dbout\WpRestApi\ParamSpec;
 use Dbout\WpRestApi\Route;
 use Dbout\WpRestApi\Tests\Unit\fixtures\Loaders\SortDirection;
 use Dbout\WpRestApi\Tests\Unit\fixtures\Loaders\WithActionPaths\RouteWithActionPaths;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Loaders\WithEmptyPath\RouteWithEmptyPath;
 use Dbout\WpRestApi\Tests\Unit\fixtures\Loaders\WithInvalidResolver\RouteWithInvalidResolver;
 use Dbout\WpRestApi\Tests\Unit\fixtures\Loaders\WithPlaceholders\RouteWithPlaceholders;
 use Dbout\WpRestApi\Tests\Unit\fixtures\Loaders\WithEnumParam\RouteWithEnumParam;
@@ -203,6 +204,18 @@ class AnnotatedRouteRestLoaderTest extends TestCase
         $this->expectExceptionMessage('loadRoutes()');
 
         (new AnnotatedRouteRestLoader())->load(RouteWithActionPaths::class);
+    }
+
+    /**
+     * @covers ::loadRoutes
+     * @covers ::buildPath
+     */
+    public function testEmptyFinalPathThrows(): void
+    {
+        $this->expectException(ApiException::class);
+        $this->expectExceptionMessage('The route path of ' . RouteWithEmptyPath::class . '::list() cannot be empty');
+
+        (new AnnotatedRouteRestLoader())->loadRoutes(RouteWithEmptyPath::class);
     }
 
     /**
