@@ -9,12 +9,14 @@
 namespace Dbout\WpRestApi\Loaders;
 
 use Dbout\WpRestApi\Attributes\Action;
+use Dbout\WpRestApi\Attributes\Middleware;
 use Dbout\WpRestApi\Attributes\Param;
 use Dbout\WpRestApi\Attributes\Resolve;
 use Dbout\WpRestApi\Attributes\Route;
 use Dbout\WpRestApi\Enums\Method;
 use Dbout\WpRestApi\Exceptions\ApiException;
 use Dbout\WpRestApi\Helpers\PathCompiler;
+use Dbout\WpRestApi\Middleware\MiddlewareInterface;
 use Dbout\WpRestApi\ParamSpec;
 use Dbout\WpRestApi\Resolvers\ParameterResolverInterface;
 use Dbout\WpRestApi\Route as RestRoute;
@@ -51,7 +53,8 @@ class AnnotatedRouteRestLoader implements InterfaceLoader
      *
      * @param mixed $resource Class name.
      * @throws \InvalidArgumentException When the class does not exist or is abstract.
-     * @throws ApiException When a final path is empty or has an invalid placeholder.
+     * @throws ApiException When a final path is empty, has an invalid placeholder
+     *                      or a #[Middleware] class is invalid.
      * @return list<RestRoute> Empty when the class has no #[Route] or no #[Action].
      */
     public function loadRoutes(mixed $resource): array
@@ -74,6 +77,8 @@ class AnnotatedRouteRestLoader implements InterfaceLoader
             return [];
         }
 
+        $classMiddlewares = $this->collectMiddlewares($class);
+
         /** @var array<string, list<RouteAction>> $actionsByPath */
         $actionsByPath = [];
         foreach ($class->getMethods(\ReflectionMethod::IS_PUBLIC) as $method) {
@@ -94,7 +99,13 @@ class AnnotatedRouteRestLoader implements InterfaceLoader
             }
 
             $path = PathCompiler::compile($path);
-            $actionsByPath[$path][] = $this->createAction($class, $method, $route, $action);
+            $actionsByPath[$path][] = $this->createAction(
+                $class,
+                $method,
+                $route,
+                $action,
+                [...$classMiddlewares, ...$this->collectMiddlewares($method)],
+            );
         }
 
         $routes = [];
@@ -133,6 +144,38 @@ class AnnotatedRouteRestLoader implements InterfaceLoader
                 ));
             }
         }
+    }
+
+    /**
+     * Returns the #[Middleware] classes declared on a class or a method, in
+     * declaration order, checked when routes are loaded so an invalid class
+     * fails at registration time rather than on the first request.
+     *
+     * @param \ReflectionClass<object>|\ReflectionMethod $reflector
+     * @throws ApiException When a class does not exist or does not implement MiddlewareInterface.
+     * @return list<string>
+     */
+    protected function collectMiddlewares(\ReflectionClass|\ReflectionMethod $reflector): array
+    {
+        $middlewares = [];
+        foreach ($reflector->getAttributes(Middleware::class) as $attribute) {
+            foreach ($attribute->newInstance()->classes as $middleware) {
+                if (!is_a($middleware, MiddlewareInterface::class, true)) {
+                    throw new ApiException(sprintf(
+                        'The middleware %s of %s must be an existing class implementing %s.',
+                        $middleware,
+                        $reflector instanceof \ReflectionMethod
+                            ? sprintf('%s::%s()', $reflector->getDeclaringClass()->getName(), $reflector->getName())
+                            : $reflector->getName(),
+                        MiddlewareInterface::class,
+                    ));
+                }
+
+                $middlewares[] = $middleware;
+            }
+        }
+
+        return $middlewares;
     }
 
     /**
@@ -175,13 +218,15 @@ class AnnotatedRouteRestLoader implements InterfaceLoader
      * @param \ReflectionMethod $method
      * @param Route $route
      * @param Action $action
+     * @param list<string> $middlewares
      * @return RouteAction
      */
     protected function createAction(
         \ReflectionClass $reflectionClass,
         \ReflectionMethod $method,
         Route $route,
-        Action $action
+        Action $action,
+        array $middlewares = [],
     ): RouteAction {
         $methods = [];
         if ($action->methods instanceof Method) {
@@ -198,6 +243,7 @@ class AnnotatedRouteRestLoader implements InterfaceLoader
             $methods,
             $action->permissionCallback ?? $route->permissionCallback,
             $this->collectParams($method),
+            $middlewares,
         );
     }
 

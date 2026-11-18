@@ -214,12 +214,25 @@ class RouteLoader
                     return null;
                 }
 
+                // Missing in payloads written before middlewares existed.
+                $middlewares = $rawAction['middlewares'] ?? [];
+                if (!is_array($middlewares) || !array_is_list($middlewares)) {
+                    return null;
+                }
+
+                foreach ($middlewares as $middleware) {
+                    if (!is_string($middleware)) {
+                        return null;
+                    }
+                }
+
                 $actions[] = new RouteAction(
                     $className,
                     $methodName,
                     array_values(array_filter($methods, is_string(...))),
                     $rawAction['permissionCallback'] ?? null,
                     $params,
+                    $middlewares,
                 );
             }
 
@@ -272,6 +285,7 @@ class RouteLoader
                     'methods' => $action->methods,
                     'permissionCallback' => $action->permissionCallback,
                     'params' => $serializedParams,
+                    'middlewares' => $action->middlewares,
                 ];
             }
 
@@ -473,6 +487,7 @@ class RouteLoader
                     $action,
                     $isDebug,
                     $errorFormatter,
+                    $options->middlewares,
                 ), 'execute'],
                 'permission_callback' => [new PermissionWrapper($action), 'execute'],
                 'args' => $this->compileArgs($action),

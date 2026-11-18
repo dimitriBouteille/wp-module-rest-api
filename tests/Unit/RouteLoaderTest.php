@@ -13,6 +13,8 @@ use Dbout\WpRestApi\Route;
 use Dbout\WpRestApi\RouteAction;
 use Dbout\WpRestApi\RouteLoader;
 use Dbout\WpRestApi\RouteLoaderOptions;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Middlewares\RecordingMiddleware;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Middlewares\ThirdMiddleware;
 use PHPUnit\Framework\TestCase;
 use Psr\Cache\CacheItemInterface;
 use Psr\Cache\CacheItemPoolInterface;
@@ -254,6 +256,99 @@ class RouteLoaderTest extends TestCase
             $this->paramArgsByRequestName($second[0]->actions[0]->params),
             'ParamSpec list must come back identical from the cache.',
         );
+    }
+
+    /**
+     * @covers ::dehydrateRoutes
+     * @covers ::hydrateRoutes
+     */
+    public function testMiddlewaresSurviveCacheRoundtrip(): void
+    {
+        $cache = new ArrayCachePool();
+        $loader = new RouteLoader(
+            __DIR__ . '/fixtures/Loaders/WithMiddlewares',
+            new RouteLoaderOptions(cache: $cache),
+        );
+
+        $first = $this->invokeGetRoutes($loader);
+
+        $bogus = new RouteLoader('/does/not/exist', new RouteLoaderOptions(cache: $cache));
+        $second = $this->invokeGetRoutes($bogus);
+
+        $this->assertNotEmpty($first[0]->actions[0]->middlewares);
+        $this->assertSame(
+            array_map(static fn (RouteAction $action): array => $action->middlewares, $first[0]->actions),
+            array_map(static fn (RouteAction $action): array => $action->middlewares, $second[0]->actions),
+        );
+    }
+
+    /**
+     * @covers ::buildRouteArgs
+     */
+    public function testGlobalMiddlewaresRunBeforeAttributeMiddlewares(): void
+    {
+        $loader = new RouteLoader(
+            __DIR__ . '/fixtures/Loaders/WithMiddlewares',
+            new RouteLoaderOptions(middlewares: [ThirdMiddleware::class]),
+        );
+        $routes = $this->invokeGetRoutes($loader);
+        $args = $this->invokeBuildRouteArgs($loader, $routes[0]);
+        $create = array_values(array_filter($args, static fn (array $arg): bool => $arg['methods'] === ['POST']))[0];
+
+        RecordingMiddleware::$log = [];
+        $create['callback'](new \WP_REST_Request('POST', '/dummy'));
+
+        $this->assertSame([
+            'ThirdMiddleware:before',
+            'FirstMiddleware:before',
+            'SecondMiddleware:before',
+            'SecondMiddleware:after',
+            'FirstMiddleware:after',
+            'ThirdMiddleware:after',
+        ], RecordingMiddleware::$log);
+    }
+
+    /**
+     * Payloads written before middlewares existed have no "middlewares" key.
+     *
+     * @covers ::hydrateRoutes
+     */
+    public function testCachePayloadWithoutMiddlewaresIsAccepted(): void
+    {
+        $cache = new ArrayCachePool();
+        $loader = new RouteLoader('/does/not/exist', new RouteLoaderOptions(cache: $cache));
+        $item = $cache->getItem($loader->getCacheKey());
+        $item->set(json_encode([[
+            'namespace' => 'test-cache/v1',
+            'path' => '/legacy',
+            'actions' => [['className' => 'Foo', 'methodName' => 'bar', 'methods' => ['GET'], 'params' => []]],
+        ]]));
+        $cache->save($item);
+
+        $routes = $this->invokeGetRoutes($loader);
+
+        $this->assertSame('/legacy', $routes[0]->path);
+        $this->assertSame([], $routes[0]->actions[0]->middlewares);
+    }
+
+    /**
+     * @covers ::hydrateRoutes
+     */
+    public function testCachePayloadWithInvalidMiddlewaresFallsBack(): void
+    {
+        $cache = new ArrayCachePool();
+        $loader = new RouteLoader(self::FIXTURE_DIR, new RouteLoaderOptions(cache: $cache));
+        $item = $cache->getItem($loader->getCacheKey());
+        $item->set(json_encode([[
+            'namespace' => 'test-cache/v1',
+            'path' => '/stale',
+            'actions' => [['className' => 'Foo', 'methodName' => 'bar', 'methods' => ['GET'], 'middlewares' => [42]]],
+        ]]));
+        $cache->save($item);
+
+        $routes = $this->invokeGetRoutes($loader);
+
+        $this->assertSame('/ping', $routes[0]->path, 'An invalid payload must trigger a fresh discovery.');
     }
 
     /**

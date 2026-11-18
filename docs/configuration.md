@@ -13,6 +13,7 @@ $options = new RouteLoaderOptions(
     errorFormatter: null,
     cacheVersion: '',
     cacheFingerprint: false,
+    middlewares: [],
 );
 
 (new NamespaceRouteLoader('App\\Routes\\', $options))->register();
@@ -26,6 +27,7 @@ $options = new RouteLoaderOptions(
 | `errorFormatter` | `?ErrorFormatterInterface`            | `DefaultFormatter`       | Format of error responses, see [Error handling](error-handling.md#rfc-7807-format). |
 | `cacheVersion`   | `string`                              | `''`                     | Added to the cache key: changing it rebuilds the cache, see [Cache invalidation](#cache-invalidation). |
 | `cacheFingerprint` | `bool`                              | `false`                  | Rebuilds the cache when a route file changes, see [Cache invalidation](#cache-invalidation). |
+| `middlewares`    | `array<class-string\|MiddlewareInterface>` | `[]`             | Run around every action of the loader, see [Middlewares](middlewares.md#middlewares-for-every-route). |
 
 ## Cache
 
