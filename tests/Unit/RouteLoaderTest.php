@@ -354,7 +354,7 @@ class RouteLoaderTest extends TestCase
         yield 'Abstract class' => [AbstractMiddleware::class, AbstractMiddleware::class];
         yield 'Required constructor argument' => [MiddlewareWithRequiredArgument::class, MiddlewareWithRequiredArgument::class];
         yield 'Object that is not a middleware' => [new \stdClass(), 'stdClass'];
-        yield 'Closure' => [static fn (): null => null, 'Closure'];
+        yield 'Closure' => [static fn () => null, 'Closure'];
         yield 'Integer' => [42, 'int'];
     }
 
