@@ -99,13 +99,15 @@ class AnnotatedRouteRestLoader implements InterfaceLoader
             }
 
             $path = PathCompiler::compile($path);
-            $actionsByPath[$path][] = $this->createAction(
-                $class,
-                $method,
-                $route,
-                $action,
-                [...$classMiddlewares, ...$this->collectMiddlewares($method)],
-            );
+            $routeAction = $this->createAction($class, $method, $route, $action);
+            // Added here rather than through createAction(), whose signature
+            // is kept for the classes overriding it.
+            $middlewares = [...$classMiddlewares, ...$this->collectMiddlewares($method)];
+            if ($middlewares !== []) {
+                $routeAction = $routeAction->withMiddlewares($middlewares);
+            }
+
+            $actionsByPath[$path][] = $routeAction;
         }
 
         $routes = [];
@@ -219,15 +221,13 @@ class AnnotatedRouteRestLoader implements InterfaceLoader
      * @param \ReflectionMethod $method
      * @param Route $route
      * @param Action $action
-     * @param list<string> $middlewares
      * @return RouteAction
      */
     protected function createAction(
         \ReflectionClass $reflectionClass,
         \ReflectionMethod $method,
         Route $route,
-        Action $action,
-        array $middlewares = [],
+        Action $action
     ): RouteAction {
         $methods = [];
         if ($action->methods instanceof Method) {
@@ -244,7 +244,6 @@ class AnnotatedRouteRestLoader implements InterfaceLoader
             $methods,
             $action->permissionCallback ?? $route->permissionCallback,
             $this->collectParams($method),
-            $middlewares,
         );
     }
 

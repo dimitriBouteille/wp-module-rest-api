@@ -31,4 +31,23 @@ class RouteAction
         public readonly array $middlewares = [],
     ) {
     }
+
+    /**
+     * Returns a copy of the action with the given middlewares, the other
+     * properties being readonly.
+     *
+     * @param list<string> $middlewares
+     * @return self
+     */
+    public function withMiddlewares(array $middlewares): self
+    {
+        return new self(
+            $this->className,
+            $this->methodName,
+            $this->methods,
+            $this->permissionCallback,
+            $this->params,
+            $middlewares,
+        );
+    }
 }

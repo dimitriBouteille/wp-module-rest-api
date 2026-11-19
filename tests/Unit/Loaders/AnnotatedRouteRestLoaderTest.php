@@ -15,6 +15,7 @@ use Dbout\WpRestApi\Permissions\IsEditor;
 use Dbout\WpRestApi\Permissions\IsPublic;
 use Dbout\WpRestApi\ParamSpec;
 use Dbout\WpRestApi\Route;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Loaders\LegacyCreateActionLoader;
 use Dbout\WpRestApi\Tests\Unit\fixtures\Loaders\SortDirection;
 use Dbout\WpRestApi\Tests\Unit\fixtures\Loaders\WithAbstractMiddleware\RouteWithAbstractMiddleware;
 use Dbout\WpRestApi\Tests\Unit\fixtures\Loaders\WithActionPaths\RouteWithActionPaths;
@@ -313,5 +314,29 @@ class AnnotatedRouteRestLoaderTest extends TestCase
         $this->expectExceptionMessage('The middleware ' . AbstractMiddleware::class . ' of ' . RouteWithAbstractMiddleware::class . ' must be an existing class implementing');
 
         (new AnnotatedRouteRestLoader())->loadRoutes(RouteWithAbstractMiddleware::class);
+    }
+
+    /**
+     * A loader overriding createAction() with its signature before
+     * middlewares keeps working, and its actions still get the middlewares.
+     *
+     * @covers ::loadRoutes
+     * @covers ::createAction
+     */
+    public function testCreateActionOverrideWithLegacySignatureGetsMiddlewares(): void
+    {
+        $loader = new LegacyCreateActionLoader();
+        $routes = $loader->loadRoutes(RouteWithMiddlewares::class);
+
+        $byMethod = [];
+        foreach ($routes[0]->actions as $action) {
+            $byMethod[$action->methodName] = $action->middlewares;
+        }
+
+        $this->assertSame(2, $loader->calls);
+        $this->assertSame(
+            [FirstMiddleware::class, SecondMiddleware::class, ThirdMiddleware::class],
+            $byMethod['list'],
+        );
     }
 }
