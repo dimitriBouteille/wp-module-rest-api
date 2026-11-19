@@ -14,11 +14,13 @@ use Dbout\WpRestApi\Exceptions\ApiException;
 use Dbout\WpRestApi\Helpers\FileLocator;
 use Dbout\WpRestApi\Loaders\AnnotationDirectoryLoader;
 use Dbout\WpRestApi\Middleware\MiddlewareInterface;
+use Dbout\WpRestApi\Wrappers\ClassFactory;
 use Dbout\WpRestApi\Wrappers\PermissionWrapper;
 use Dbout\WpRestApi\Wrappers\ReflectionCache;
 use Dbout\WpRestApi\Wrappers\RestWrapper;
 use Psr\Cache\CacheItemPoolInterface;
 use Psr\Cache\InvalidArgumentException;
+use Psr\Container\ContainerInterface;
 
 class RouteLoader
 {
@@ -448,6 +450,69 @@ class RouteLoader
                 ));
             }
         }
+
+        $this->checkConstructors($routes);
+    }
+
+    /**
+     * Checks that the classes created on each request (controller, permission
+     * class, #[Resolve] resolvers, #[Middleware] classes) can be created: the
+     * container has them or they need no constructor argument.
+     *
+     * Done when routes are discovered, not on each register(), so a cache hit
+     * costs no reflection: the error message of ClassFactory still explains
+     * the problem at request time when the container changes afterwards.
+     *
+     * @param array<Route> $routes
+     * @throws ApiException
+     * @throws \ReflectionException
+     * @return void
+     */
+    protected function checkConstructors(array $routes): void
+    {
+        $factory = $this->classFactory();
+        foreach ($routes as $route) {
+            foreach ($route->actions as $action) {
+                $className = $action->className;
+                if (!is_string($className) || !class_exists($className)) {
+                    continue;
+                }
+
+                $classes = [$className, ...$action->middlewares];
+                $permission = $action->permissionCallback;
+                if (is_string($permission) && class_exists($permission) && ReflectionCache::implementsPermissionInterface($permission)) {
+                    $classes[] = $permission;
+                }
+
+                foreach (ReflectionCache::parameters($className, $action->methodName) as $descriptor) {
+                    if ($descriptor->resolverClass !== null) {
+                        $classes[] = $descriptor->resolverClass;
+                    }
+                }
+
+                foreach ($classes as $class) {
+                    if (!class_exists($class) || $factory->canCreate($class)) {
+                        continue;
+                    }
+
+                    throw new ApiException(sprintf(
+                        '%s Used by %s::%s().',
+                        ClassFactory::cannotCreateMessage($class, $this->options?->container instanceof ContainerInterface),
+                        $className,
+                        $action->methodName,
+                    ));
+                }
+            }
+        }
+    }
+
+    /**
+     * @return ClassFactory Creates the user classes through the container of
+     *                      the options, when one is set.
+     */
+    protected function classFactory(): ClassFactory
+    {
+        return new ClassFactory($this->options?->container);
     }
 
     /**
@@ -464,21 +529,28 @@ class RouteLoader
      */
     protected function checkMiddlewares(array $middlewares): void
     {
+        $factory = $this->classFactory();
         foreach ($middlewares as $middleware) {
             if ($middleware instanceof MiddlewareInterface) {
                 continue;
             }
 
-            if (is_string($middleware) && ReflectionCache::isMiddleware($middleware)) {
-                continue;
+            if (!is_string($middleware) || !ReflectionCache::isMiddleware($middleware)) {
+                throw new ApiException(sprintf(
+                    'The middleware %s of %s::$middlewares must be an instance of %s or an existing, non-abstract class implementing it.',
+                    is_string($middleware) ? $middleware : get_debug_type($middleware),
+                    RouteLoaderOptions::class,
+                    MiddlewareInterface::class,
+                ));
             }
 
-            throw new ApiException(sprintf(
-                'The middleware %s of %s::$middlewares must be an instance of %s or an existing class implementing it, instantiable without arguments.',
-                is_string($middleware) ? $middleware : get_debug_type($middleware),
-                RouteLoaderOptions::class,
-                MiddlewareInterface::class,
-            ));
+            if (!$factory->canCreate($middleware)) {
+                throw new ApiException(sprintf(
+                    '%s Used by %s::$middlewares.',
+                    ClassFactory::cannotCreateMessage($middleware, $this->options?->container instanceof ContainerInterface),
+                    RouteLoaderOptions::class,
+                ));
+            }
         }
     }
 
@@ -515,6 +587,7 @@ class RouteLoader
         $options = $this->options ?? new RouteLoaderOptions();
         $isDebug = $options->debug;
         $errorFormatter = $options->errorFormatter ?? new DefaultFormatter();
+        $classFactory = $this->classFactory();
 
         foreach ($route->actions as $action) {
             $actions[] = [
@@ -524,8 +597,9 @@ class RouteLoader
                     $isDebug,
                     $errorFormatter,
                     $options->middlewares,
+                    $classFactory,
                 ), 'execute'],
-                'permission_callback' => [new PermissionWrapper($action), 'execute'],
+                'permission_callback' => [new PermissionWrapper($action, $classFactory), 'execute'],
                 'args' => $this->compileArgs($action),
             ];
         }

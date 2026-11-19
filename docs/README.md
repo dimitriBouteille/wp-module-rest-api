@@ -9,5 +9,6 @@
 5. [Middlewares](middlewares.md): run code around actions (rate limiting, logging, caching…)
 6. [Error handling](error-handling.md): exceptions, error format, RFC 7807
 7. [Configuration](configuration.md): cache, debug mode, error formatter, loaders
+8. [Dependency injection](dependency-injection.md): inject services with a PSR-11 container
 
 Upgrading from 1.x? Read the [upgrade guide](../UPGRADE.md).

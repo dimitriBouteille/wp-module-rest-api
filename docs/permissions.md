@@ -148,7 +148,7 @@ class PaymentWebhookController
 
 > 💡 Use `hash_equals()` to compare signatures: a plain `===` comparison is vulnerable to timing attacks. Keep the secret out of the code (constant in `wp-config.php`, environment variable…).
 
-The class is instantiated without arguments, so its constructor must not require any.
+The class is instantiated without arguments, so its constructor must not require any, unless a [container](dependency-injection.md) provides it.
 
 ## Callables
 

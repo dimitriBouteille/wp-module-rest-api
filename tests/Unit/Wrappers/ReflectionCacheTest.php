@@ -20,6 +20,8 @@ use Dbout\WpRestApi\Tests\Unit\fixtures\RouteWithFatalError;
 use Dbout\WpRestApi\Tests\Unit\fixtures\RouteWithInjectionCases;
 use Dbout\WpRestApi\Wrappers\ParameterDescriptor;
 use Dbout\WpRestApi\Wrappers\ReflectionCache;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Container\AbstractResolver;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Container\PrivateConstructor;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -155,6 +157,37 @@ class ReflectionCacheTest extends TestCase
         yield 'Not a middleware' => [\stdClass::class, false];
         yield 'The interface itself' => [MiddlewareInterface::class, false];
         yield 'Abstract class' => [AbstractMiddleware::class, false];
+        yield 'Required constructor argument, checked by RouteLoader' => [MiddlewareWithRequiredArgument::class, true];
+    }
+
+    /**
+     * @covers ::isParameterResolver
+     */
+    public function testAbstractClassIsNotAParameterResolver(): void
+    {
+        $this->assertFalse(ReflectionCache::isParameterResolver(AbstractResolver::class));
+    }
+
+    /**
+     * @param class-string $class
+     * @param bool $expected
+     * @dataProvider providerIsInstantiableWithoutArguments
+     * @covers ::isInstantiableWithoutArguments
+     */
+    public function testIsInstantiableWithoutArguments(string $class, bool $expected): void
+    {
+        $this->assertSame($expected, ReflectionCache::isInstantiableWithoutArguments($class));
+    }
+
+    /**
+     * @return \Generator
+     */
+    public static function providerIsInstantiableWithoutArguments(): \Generator
+    {
+        yield 'No constructor' => [FirstMiddleware::class, true];
+        yield 'Optional constructor argument' => [MiddlewareWithOptionalArgument::class, true];
         yield 'Required constructor argument' => [MiddlewareWithRequiredArgument::class, false];
+        yield 'Abstract class' => [AbstractMiddleware::class, false];
+        yield 'Private constructor' => [PrivateConstructor::class, false];
     }
 }

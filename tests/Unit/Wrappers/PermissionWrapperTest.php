@@ -14,6 +14,9 @@ use Dbout\WpRestApi\Tests\Unit\fixtures\AlwaysAllowPermission;
 use Dbout\WpRestApi\Tests\Unit\fixtures\AlwaysDenyPermission;
 use Dbout\WpRestApi\Tests\Unit\fixtures\PermissionCallbacks;
 use Dbout\WpRestApi\Wrappers\PermissionWrapper;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Container\ArrayContainer;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Container\PermissionWithDependency;
+use Dbout\WpRestApi\Wrappers\ClassFactory;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -137,5 +140,35 @@ class PermissionWrapperTest extends TestCase
             ['GET', 'POST'],
             $permissionCallback,
         ));
+    }
+
+    /**
+     * @covers ::execute
+     */
+    public function testContainerResolvesPermissionClass(): void
+    {
+        $container = new ArrayContainer([
+            PermissionWithDependency::class => new PermissionWithDependency(false),
+        ]);
+        $wrapper = new PermissionWrapper(
+            new RouteAction('MyClass', 'execute', ['GET'], PermissionWithDependency::class),
+            new ClassFactory($container),
+        );
+
+        $this->assertFalse($wrapper->execute(new \WP_REST_Request()));
+        $this->assertSame([PermissionWithDependency::class], $container->requested);
+    }
+
+    /**
+     * @covers ::execute
+     */
+    public function testPermissionClassMissingFromContainerIsInstantiated(): void
+    {
+        $wrapper = new PermissionWrapper(
+            new RouteAction('MyClass', 'execute', ['GET'], AlwaysAllowPermission::class),
+            new ClassFactory(new ArrayContainer()),
+        );
+
+        $this->assertTrue($wrapper->execute(new \WP_REST_Request()));
     }
 }

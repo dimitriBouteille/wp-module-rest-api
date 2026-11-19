@@ -33,6 +33,12 @@ use Dbout\WpRestApi\Tests\Unit\fixtures\RouteWithRequestParam;
 use Dbout\WpRestApi\Tests\Unit\fixtures\RouteWithRouteException;
 use Dbout\WpRestApi\Tests\Unit\fixtures\RouteWithTypedParams;
 use Dbout\WpRestApi\Wrappers\RestWrapper;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Container\ArrayContainer;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Container\ControllerWithDependency;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Container\Greeter;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Container\MiddlewareWithDependency;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Container\ResolverWithDependency;
+use Dbout\WpRestApi\Wrappers\ClassFactory;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -635,7 +641,7 @@ class RestWrapperTest extends TestCase
 
         $this->assertSame(500, $response->get_status());
         $this->assertStringContainsString(
-            'The middleware ' . MiddlewareWithRequiredArgument::class . ' must be an instance of',
+            'The class ' . MiddlewareWithRequiredArgument::class . ' cannot be instantiated without arguments',
             $response->get_data()['error']['message'] ?? '',
         );
     }
@@ -833,5 +839,102 @@ class RestWrapperTest extends TestCase
         $this->assertInstanceOf(\WP_REST_Response::class, $response);
         $this->assertEquals($expectedHttpCode, $response->get_status());
         $this->assertEquals($expectedMessage, $error['message'] ?? null);
+    }
+
+    /**
+     * @covers ::instantiate
+     * @covers ::runAction
+     */
+    public function testContainerIsUsedWhenAvailable(): void
+    {
+        $container = new ArrayContainer([
+            ControllerWithDependency::class => new ControllerWithDependency(new Greeter('Hello')),
+        ]);
+        $action = new RouteAction(ControllerWithDependency::class, 'hello', ['GET'], null);
+
+        $response = (new RestWrapper($action, classFactory: new ClassFactory($container)))
+            ->execute(new \WP_REST_Request());
+
+        $this->assertSame(200, $response->get_status());
+        $this->assertSame(['message' => 'Hello'], $response->get_data());
+    }
+
+    /**
+     * @covers ::instantiate
+     */
+    public function testFallsBackToNewInstanceWhenContainerMissesClass(): void
+    {
+        $action = new RouteAction(RouteReturningResponse::class, 'execute', ['GET'], null);
+
+        $response = (new RestWrapper($action, classFactory: new ClassFactory(new ArrayContainer())))
+            ->execute(new \WP_REST_Request());
+
+        $this->assertSame(200, $response->get_status());
+    }
+
+    /**
+     * @covers ::buildMiddlewares
+     */
+    public function testContainerResolvesMiddlewares(): void
+    {
+        RecordingMiddleware::$log = [];
+        $container = new ArrayContainer([
+            MiddlewareWithDependency::class => new MiddlewareWithDependency(new Greeter('Hello')),
+            FirstMiddleware::class => new FirstMiddleware(),
+        ]);
+        $action = new RouteAction(
+            RouteWithMiddlewareLog::class,
+            'execute',
+            ['GET'],
+            null,
+            middlewares: [MiddlewareWithDependency::class],
+        );
+
+        $response = (new RestWrapper(
+            $action,
+            globalMiddlewares: [FirstMiddleware::class],
+            classFactory: new ClassFactory($container),
+        ))->execute(new \WP_REST_Request());
+
+        $this->assertSame(200, $response->get_status());
+        $this->assertSame('Hello', $response->get_headers()['X-Greeting'] ?? null);
+        $this->assertSame(
+            [FirstMiddleware::class, MiddlewareWithDependency::class],
+            $container->requested,
+            'Global and attribute middlewares both go through the container.',
+        );
+    }
+
+    /**
+     * @covers ::resolveArgument
+     */
+    public function testContainerResolvesResolvers(): void
+    {
+        $container = new ArrayContainer([
+            ControllerWithDependency::class => new ControllerWithDependency(new Greeter('Hello')),
+            ResolverWithDependency::class => new ResolverWithDependency(new Greeter('Resolved')),
+        ]);
+        $action = new RouteAction(ControllerWithDependency::class, 'resolved', ['GET'], null);
+
+        $response = (new RestWrapper($action, classFactory: new ClassFactory($container)))
+            ->execute(new \WP_REST_Request());
+
+        $this->assertSame(['value' => 'Resolved'], $response->get_data());
+    }
+
+    /**
+     * @covers ::instantiate
+     */
+    public function testControllerWithRequiredArgumentWithoutContainerProducesErrorResponse(): void
+    {
+        $action = new RouteAction(ControllerWithDependency::class, 'hello', ['GET'], null);
+
+        $response = (new RestWrapper($action, true))->execute(new \WP_REST_Request());
+
+        $this->assertSame(500, $response->get_status());
+        $this->assertStringContainsString(
+            'set RouteLoaderOptions::$container to inject its dependencies',
+            $response->get_data()['error']['message'] ?? '',
+        );
     }
 }

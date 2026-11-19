@@ -59,7 +59,7 @@ class DocumentController
 
 ## Middlewares for every route
 
-To run a middleware around every action of a loader, pass it in [`RouteLoaderOptions`](configuration.md). Class names and instances are both accepted, so a middleware that needs constructor arguments can be configured here:
+To run a middleware around every action of a loader, pass it in [`RouteLoaderOptions`](configuration.md). Class names and instances are both accepted, so a middleware that needs constructor arguments can be configured here, or created by the [container](dependency-injection.md):
 
 ```php
 use Dbout\WpRestApi\NamespaceRouteLoader;
@@ -146,6 +146,6 @@ class RateLimit implements MiddlewareInterface
 - **Parameters set by a middleware skip validation and sanitization.** WordPress applies the `args` of the route (`#[Param]`: `validate_callback`, `sanitize_callback`, `type`, `enum`…) before the action is called, so before the middlewares. A value set with `$request->set_param()` reaches the action with only the cast of its PHP type (`(int)`, `(string)`…): validate and sanitize it in the middleware.
 - **`OPTIONS` requests do not reach the middlewares.** WordPress answers CORS preflight requests itself, without calling the action, so CORS headers set by a middleware only apply to the actual request.
 - **A method cannot remove a class middleware.** Move the action to another class if it must not go through it.
-- **Middlewares are checked when routes are registered**, those of `#[Middleware]` as well as those of `RouteLoaderOptions`: a class that does not exist, does not implement `MiddlewareInterface`, is abstract or has a required constructor argument throws an `ApiException`, as does a value that is neither a class name nor a middleware instance.
-- **Middlewares are instantiated without arguments** on each request. Use `RouteLoaderOptions::$middlewares` with an instance when a middleware needs dependencies.
+- **Middlewares are checked when routes are registered**, those of `#[Middleware]` as well as those of `RouteLoaderOptions`: a class that does not exist, does not implement `MiddlewareInterface`, is abstract or has a required constructor argument that the container does not provide throws an `ApiException`, as does a value that is neither a class name nor a middleware instance.
+- **Middlewares are created on each request**, by the [container](dependency-injection.md) when it has the class, without arguments otherwise. Most containers return the same instance on each call: a middleware that keeps a state shares it between requests.
 - The class names are stored in the [route cache](configuration.md#cache); the middlewares of `RouteLoaderOptions` are not, changing them does not require a cache rebuild.

@@ -25,8 +25,9 @@ use Dbout\WpRestApi\Middleware\MiddlewareInterface;
  * ```
  *
  * Class middlewares run before method middlewares, in declaration order.
- * Each class is checked when routes are loaded and instantiated without
- * arguments on each request.
+ * Each class is checked when routes are loaded and created on each request,
+ * through the container of RouteLoaderOptions when it has the class, without
+ * arguments otherwise.
  */
 #[\Attribute(\Attribute::TARGET_CLASS | \Attribute::TARGET_METHOD | \Attribute::IS_REPEATABLE)]
 final class Middleware
