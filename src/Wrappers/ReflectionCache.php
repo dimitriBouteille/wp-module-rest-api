@@ -10,6 +10,7 @@ namespace Dbout\WpRestApi\Wrappers;
 
 use Dbout\WpRestApi\Attributes\Param;
 use Dbout\WpRestApi\Attributes\Resolve;
+use Dbout\WpRestApi\Middleware\MiddlewareInterface;
 use Dbout\WpRestApi\Permissions\PermissionInterface;
 use Dbout\WpRestApi\Resolvers\ParameterResolverInterface;
 
@@ -28,6 +29,9 @@ final class ReflectionCache
 
     /** @var array<string, bool> */
     private static array $isParameterResolver = [];
+
+    /** @var array<string, bool> */
+    private static array $isMiddleware = [];
 
     /**
      * Returns the resolved parameter descriptors for the given method.
@@ -99,6 +103,32 @@ final class ReflectionCache
     }
 
     /**
+     * Whether the given class can be used as a middleware: it exists,
+     * implements MiddlewareInterface and can be instantiated without
+     * arguments (not an interface nor an abstract class, no required
+     * constructor parameter).
+     *
+     * @param string $class
+     * @phpstan-assert-if-true class-string<MiddlewareInterface> $class
+     */
+    public static function isMiddleware(string $class): bool
+    {
+        if (isset(self::$isMiddleware[$class])) {
+            return self::$isMiddleware[$class];
+        }
+
+        if (!class_exists($class)) {
+            return self::$isMiddleware[$class] = false;
+        }
+
+        $reflection = new \ReflectionClass($class);
+
+        return self::$isMiddleware[$class] = $reflection->implementsInterface(MiddlewareInterface::class)
+            && $reflection->isInstantiable()
+            && ($reflection->getConstructor()?->getNumberOfRequiredParameters() ?? 0) === 0;
+    }
+
+    /**
      * Clear the cache. Intended for tests that swap class definitions
      * between scenarios; production code never needs this.
      */
@@ -107,5 +137,6 @@ final class ReflectionCache
         self::$parameters = [];
         self::$implementsPermissionInterface = [];
         self::$isParameterResolver = [];
+        self::$isMiddleware = [];
     }
 }

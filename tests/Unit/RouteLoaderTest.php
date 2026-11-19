@@ -13,6 +13,11 @@ use Dbout\WpRestApi\Route;
 use Dbout\WpRestApi\RouteAction;
 use Dbout\WpRestApi\RouteLoader;
 use Dbout\WpRestApi\RouteLoaderOptions;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Middlewares\AbstractMiddleware;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Middlewares\FirstMiddleware;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Middlewares\MiddlewareWithRequiredArgument;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Middlewares\RecordingMiddleware;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Middlewares\ThirdMiddleware;
 use PHPUnit\Framework\TestCase;
 use Psr\Cache\CacheItemInterface;
 use Psr\Cache\CacheItemPoolInterface;
@@ -257,6 +262,159 @@ class RouteLoaderTest extends TestCase
     }
 
     /**
+     * @covers ::dehydrateRoutes
+     * @covers ::hydrateRoutes
+     */
+    public function testMiddlewaresSurviveCacheRoundtrip(): void
+    {
+        $cache = new ArrayCachePool();
+        $loader = new RouteLoader(
+            __DIR__ . '/fixtures/Loaders/WithMiddlewares',
+            new RouteLoaderOptions(cache: $cache),
+        );
+
+        $first = $this->invokeGetRoutes($loader);
+
+        $bogus = new RouteLoader('/does/not/exist', new RouteLoaderOptions(cache: $cache));
+        $second = $this->invokeGetRoutes($bogus);
+
+        $this->assertNotEmpty($first[0]->actions[0]->middlewares);
+        $this->assertSame(
+            array_map(static fn (RouteAction $action): array => $action->middlewares, $first[0]->actions),
+            array_map(static fn (RouteAction $action): array => $action->middlewares, $second[0]->actions),
+        );
+    }
+
+    /**
+     * @covers ::buildRouteArgs
+     */
+    public function testGlobalMiddlewaresRunBeforeAttributeMiddlewares(): void
+    {
+        $loader = new RouteLoader(
+            __DIR__ . '/fixtures/Loaders/WithMiddlewares',
+            new RouteLoaderOptions(middlewares: [ThirdMiddleware::class]),
+        );
+        $routes = $this->invokeGetRoutes($loader);
+        $args = $this->invokeBuildRouteArgs($loader, $routes[0]);
+        $create = array_values(array_filter($args, static fn (array $arg): bool => $arg['methods'] === ['POST']))[0];
+
+        RecordingMiddleware::$log = [];
+        $create['callback'](new \WP_REST_Request('POST', '/dummy'));
+
+        $this->assertSame([
+            'ThirdMiddleware:before',
+            'FirstMiddleware:before',
+            'SecondMiddleware:before',
+            'SecondMiddleware:after',
+            'FirstMiddleware:after',
+            'ThirdMiddleware:after',
+        ], RecordingMiddleware::$log);
+    }
+
+    /**
+     * The exception is thrown before add_action(), so register() can be
+     * called without WordPress.
+     *
+     * @covers ::register
+     * @covers ::checkMiddlewares
+     */
+    public function testRegisterThrowsOnInvalidGlobalMiddleware(): void
+    {
+        $loader = new RouteLoader(
+            __DIR__ . '/fixtures/Loaders/WithMiddlewares',
+            new RouteLoaderOptions(middlewares: ['App\\Missing\\Middleware']),
+        );
+
+        $this->expectException(ApiException::class);
+        $this->expectExceptionMessage('The middleware App\\Missing\\Middleware of ' . RouteLoaderOptions::class . '::$middlewares must be');
+
+        $loader->register();
+    }
+
+    /**
+     * @param mixed $middleware
+     * @param string $expectedName
+     * @dataProvider providerInvalidGlobalMiddleware
+     * @covers ::checkMiddlewares
+     */
+    public function testInvalidGlobalMiddlewareThrows(mixed $middleware, string $expectedName): void
+    {
+        $this->expectException(ApiException::class);
+        $this->expectExceptionMessage(sprintf('The middleware %s of ', $expectedName));
+
+        $this->invokeCheckMiddlewares(new RouteLoaderOptions(middlewares: [$middleware]));
+    }
+
+    /**
+     * @return \Generator
+     */
+    public static function providerInvalidGlobalMiddleware(): \Generator
+    {
+        yield 'Not a middleware' => [\stdClass::class, 'stdClass'];
+        yield 'Abstract class' => [AbstractMiddleware::class, AbstractMiddleware::class];
+        yield 'Required constructor argument' => [MiddlewareWithRequiredArgument::class, MiddlewareWithRequiredArgument::class];
+        yield 'Object that is not a middleware' => [new \stdClass(), 'stdClass'];
+        yield 'Closure' => [static fn () => null, 'Closure'];
+        yield 'Integer' => [42, 'int'];
+    }
+
+    /**
+     * @covers ::checkMiddlewares
+     */
+    public function testValidGlobalMiddlewaresPass(): void
+    {
+        $this->invokeCheckMiddlewares(new RouteLoaderOptions(middlewares: [
+            FirstMiddleware::class,
+            new MiddlewareWithRequiredArgument('X-Test'),
+        ]));
+
+        $this->addToAssertionCount(1);
+    }
+
+    /**
+     * Payloads written before middlewares existed have no "middlewares" key.
+     *
+     * @covers ::hydrateRoutes
+     */
+    public function testCachePayloadWithoutMiddlewaresIsAccepted(): void
+    {
+        $cache = new ArrayCachePool();
+        $loader = new RouteLoader('/does/not/exist', new RouteLoaderOptions(cache: $cache));
+        $item = $cache->getItem($loader->getCacheKey());
+        $item->set(json_encode([[
+            'namespace' => 'test-cache/v1',
+            'path' => '/legacy',
+            'actions' => [['className' => 'Foo', 'methodName' => 'bar', 'methods' => ['GET'], 'params' => []]],
+        ]]));
+        $cache->save($item);
+
+        $routes = $this->invokeGetRoutes($loader);
+
+        $this->assertSame('/legacy', $routes[0]->path);
+        $this->assertSame([], $routes[0]->actions[0]->middlewares);
+    }
+
+    /**
+     * @covers ::hydrateRoutes
+     */
+    public function testCachePayloadWithInvalidMiddlewaresFallsBack(): void
+    {
+        $cache = new ArrayCachePool();
+        $loader = new RouteLoader(self::FIXTURE_DIR, new RouteLoaderOptions(cache: $cache));
+        $item = $cache->getItem($loader->getCacheKey());
+        $item->set(json_encode([[
+            'namespace' => 'test-cache/v1',
+            'path' => '/stale',
+            'actions' => [['className' => 'Foo', 'methodName' => 'bar', 'methods' => ['GET'], 'middlewares' => [42]]],
+        ]]));
+        $cache->save($item);
+
+        $routes = $this->invokeGetRoutes($loader);
+
+        $this->assertSame('/ping', $routes[0]->path, 'An invalid payload must trigger a fresh discovery.');
+    }
+
+    /**
      * @param array<\Dbout\WpRestApi\ParamSpec> $params
      * @return array<string, array<string, mixed>>
      */
@@ -391,6 +549,13 @@ class RouteLoaderTest extends TestCase
         /** @var Route[] $routes */
         $routes = $method->invoke($loader);
         return $routes;
+    }
+
+    private function invokeCheckMiddlewares(RouteLoaderOptions $options): void
+    {
+        $method = new \ReflectionMethod(RouteLoader::class, 'checkMiddlewares');
+        $method->setAccessible(true);
+        $method->invoke(new RouteLoader('/does/not/exist', $options), $options->middlewares);
     }
 
     /**

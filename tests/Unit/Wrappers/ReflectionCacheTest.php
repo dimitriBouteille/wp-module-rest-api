@@ -9,7 +9,12 @@
 namespace Dbout\WpRestApi\Tests\Unit\Wrappers;
 
 use Dbout\WpRestApi\Tests\Unit\fixtures\AlwaysAllowPermission;
+use Dbout\WpRestApi\Middleware\MiddlewareInterface;
 use Dbout\WpRestApi\Tests\Unit\fixtures\IdResolver;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Middlewares\AbstractMiddleware;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Middlewares\FirstMiddleware;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Middlewares\MiddlewareWithOptionalArgument;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Middlewares\MiddlewareWithRequiredArgument;
 use Dbout\WpRestApi\Tests\Unit\fixtures\PermissionCallbacks;
 use Dbout\WpRestApi\Tests\Unit\fixtures\RouteWithFatalError;
 use Dbout\WpRestApi\Tests\Unit\fixtures\RouteWithInjectionCases;
@@ -126,5 +131,30 @@ class ReflectionCacheTest extends TestCase
         $this->assertTrue(ReflectionCache::isParameterResolver(IdResolver::class));
         $this->assertFalse(ReflectionCache::isParameterResolver(\stdClass::class));
         $this->assertFalse(ReflectionCache::isParameterResolver('App\\Missing\\Resolver'));
+    }
+
+    /**
+     * @param string $class
+     * @param bool $expected
+     * @dataProvider providerIsMiddleware
+     * @covers ::isMiddleware
+     */
+    public function testIsMiddleware(string $class, bool $expected): void
+    {
+        $this->assertSame($expected, ReflectionCache::isMiddleware($class));
+    }
+
+    /**
+     * @return \Generator
+     */
+    public static function providerIsMiddleware(): \Generator
+    {
+        yield 'Concrete middleware' => [FirstMiddleware::class, true];
+        yield 'Optional constructor argument' => [MiddlewareWithOptionalArgument::class, true];
+        yield 'Missing class' => ['App\\Missing\\Middleware', false];
+        yield 'Not a middleware' => [\stdClass::class, false];
+        yield 'The interface itself' => [MiddlewareInterface::class, false];
+        yield 'Abstract class' => [AbstractMiddleware::class, false];
+        yield 'Required constructor argument' => [MiddlewareWithRequiredArgument::class, false];
     }
 }

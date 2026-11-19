@@ -11,6 +11,16 @@ namespace Dbout\WpRestApi\Tests\Unit\Wrappers;
 use Dbout\WpRestApi\ErrorFormat\ProblemJsonFormatter;
 use Dbout\WpRestApi\RouteAction;
 use Dbout\WpRestApi\Tests\Unit\fixtures\IntPriority;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Middlewares\CatchingMiddleware;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Middlewares\FirstMiddleware;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Middlewares\MiddlewareWithRequiredArgument;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Middlewares\RecordingMiddleware;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Middlewares\RouteWithMiddlewareLog;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Middlewares\SecondMiddleware;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Middlewares\SetParamMiddleware;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Middlewares\ShortCircuitMiddleware;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Middlewares\ThirdMiddleware;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Middlewares\ThrowingMiddleware;
 use Dbout\WpRestApi\Tests\Unit\fixtures\RouteReturningResponse;
 use Dbout\WpRestApi\Tests\Unit\fixtures\RouteWithInjectionCases;
 use Dbout\WpRestApi\Tests\Unit\fixtures\RouteWithReturnValues;
@@ -470,6 +480,164 @@ class RestWrapperTest extends TestCase
         $this->assertSame(['id' => 18], $error['data'], 'The status must not be sent in the error data.');
 
         $this->assertSame(403, $this->executeReturnCase('wpErrorStringStatus')->get_status());
+    }
+
+    /**
+     * @covers ::execute
+     * @covers ::buildMiddlewares
+     */
+    public function testMiddlewareOrder(): void
+    {
+        RecordingMiddleware::$log = [];
+        $action = new RouteAction(
+            RouteWithMiddlewareLog::class,
+            'execute',
+            ['GET'],
+            null,
+            middlewares: [SecondMiddleware::class, ThirdMiddleware::class],
+        );
+
+        $response = (new RestWrapper($action, globalMiddlewares: [new FirstMiddleware()]))
+            ->execute(new \WP_REST_Request());
+
+        $this->assertSame(200, $response->get_status());
+        $this->assertSame([
+            'FirstMiddleware:before',
+            'SecondMiddleware:before',
+            'ThirdMiddleware:before',
+            'action',
+            'ThirdMiddleware:after',
+            'SecondMiddleware:after',
+            'FirstMiddleware:after',
+        ], RecordingMiddleware::$log);
+    }
+
+    /**
+     * @covers ::execute
+     */
+    public function testMiddlewareShortCircuit(): void
+    {
+        RecordingMiddleware::$log = [];
+        $action = new RouteAction(
+            RouteWithMiddlewareLog::class,
+            'execute',
+            ['GET'],
+            null,
+            middlewares: [FirstMiddleware::class, ShortCircuitMiddleware::class, SecondMiddleware::class],
+        );
+
+        $response = (new RestWrapper($action))->execute(new \WP_REST_Request());
+
+        $this->assertSame(203, $response->get_status());
+        $this->assertSame(['cached' => true], $response->get_data());
+        $this->assertSame(
+            ['FirstMiddleware:before', 'ShortCircuitMiddleware', 'FirstMiddleware:after'],
+            RecordingMiddleware::$log,
+            'Neither the next middleware nor the action must run.',
+        );
+    }
+
+    /**
+     * @covers ::execute
+     * @covers ::onError
+     */
+    public function testMiddlewareExceptionIsFormatted(): void
+    {
+        $action = new RouteAction(
+            RouteWithMiddlewareLog::class,
+            'execute',
+            ['GET'],
+            null,
+            middlewares: [ThrowingMiddleware::class],
+        );
+
+        $response = (new RestWrapper($action))->execute(new \WP_REST_Request());
+
+        $this->exceptionAsserts($response, 'Too many requests.', 429);
+        $this->assertSame('rate-limited', $response->get_data()['error']['code'] ?? null);
+    }
+
+    /**
+     * @covers ::runAction
+     */
+    public function testMiddlewareCanModifyRequestBeforeAction(): void
+    {
+        $action = new RouteAction(
+            RouteWithMiddlewareLog::class,
+            'withName',
+            ['GET'],
+            null,
+            middlewares: [SetParamMiddleware::class],
+        );
+
+        $response = (new RestWrapper($action))->execute(new \WP_REST_Request());
+
+        $this->assertSame(['name' => 'from-middleware'], $response->get_data());
+    }
+
+    /**
+     * @covers ::execute
+     */
+    public function testMiddlewareCanCatchActionException(): void
+    {
+        $action = new RouteAction(
+            RouteWithMiddlewareLog::class,
+            'fail',
+            ['GET'],
+            null,
+            middlewares: [CatchingMiddleware::class],
+        );
+
+        $response = (new RestWrapper($action))->execute(new \WP_REST_Request());
+
+        $this->assertSame(409, $response->get_status());
+        $this->assertSame(['caught' => 'Action failed.'], $response->get_data());
+    }
+
+    /**
+     * Middlewares coming from the cache are not checked when routes are loaded.
+     *
+     * @covers ::buildMiddlewares
+     */
+    public function testInvalidMiddlewareProducesErrorResponse(): void
+    {
+        $action = new RouteAction(
+            RouteWithMiddlewareLog::class,
+            'execute',
+            ['GET'],
+            null,
+            middlewares: [\stdClass::class],
+        );
+
+        $response = (new RestWrapper($action, true))->execute(new \WP_REST_Request());
+
+        $this->assertSame(500, $response->get_status());
+        $this->assertStringContainsString(
+            'The middleware stdClass must be an instance of',
+            $response->get_data()['error']['message'] ?? '',
+        );
+    }
+
+    /**
+     * @covers ::buildMiddlewares
+     */
+    public function testUninstantiableMiddlewareProducesErrorResponse(): void
+    {
+        $action = new RouteAction(
+            RouteWithMiddlewareLog::class,
+            'execute',
+            ['GET'],
+            null,
+            middlewares: [MiddlewareWithRequiredArgument::class],
+        );
+
+        $response = (new RestWrapper($action, true))->execute(new \WP_REST_Request());
+
+        $this->assertSame(500, $response->get_status());
+        $this->assertStringContainsString(
+            'The middleware ' . MiddlewareWithRequiredArgument::class . ' must be an instance of',
+            $response->get_data()['error']['message'] ?? '',
+        );
     }
 
     /**

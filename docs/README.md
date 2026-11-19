@@ -6,7 +6,8 @@
 2. [Routes and actions](routes.md): `#[Route]`, `#[Action]`, HTTP methods, argument injection
 3. [Request parameters](parameters.md): describe and validate arguments with `#[Param]`
 4. [Permissions](permissions.md): restrict access to a route or an action
-5. [Error handling](error-handling.md): exceptions, error format, RFC 7807
-6. [Configuration](configuration.md): cache, debug mode, error formatter, loaders
+5. [Middlewares](middlewares.md): run code around actions (rate limiting, logging, caching…)
+6. [Error handling](error-handling.md): exceptions, error format, RFC 7807
+7. [Configuration](configuration.md): cache, debug mode, error formatter, loaders
 
 Upgrading from 1.x? Read the [upgrade guide](../UPGRADE.md).
