@@ -13,6 +13,9 @@ use Dbout\WpRestApi\Route;
 use Dbout\WpRestApi\RouteAction;
 use Dbout\WpRestApi\RouteLoader;
 use Dbout\WpRestApi\RouteLoaderOptions;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Middlewares\AbstractMiddleware;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Middlewares\FirstMiddleware;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Middlewares\MiddlewareWithRequiredArgument;
 use Dbout\WpRestApi\Tests\Unit\fixtures\Middlewares\RecordingMiddleware;
 use Dbout\WpRestApi\Tests\Unit\fixtures\Middlewares\ThirdMiddleware;
 use PHPUnit\Framework\TestCase;
@@ -309,6 +312,66 @@ class RouteLoaderTest extends TestCase
     }
 
     /**
+     * The exception is thrown before add_action(), so register() can be
+     * called without WordPress.
+     *
+     * @covers ::register
+     * @covers ::checkMiddlewares
+     */
+    public function testRegisterThrowsOnInvalidGlobalMiddleware(): void
+    {
+        $loader = new RouteLoader(
+            __DIR__ . '/fixtures/Loaders/WithMiddlewares',
+            new RouteLoaderOptions(middlewares: ['App\\Missing\\Middleware']),
+        );
+
+        $this->expectException(ApiException::class);
+        $this->expectExceptionMessage('The middleware App\\Missing\\Middleware of ' . RouteLoaderOptions::class . '::$middlewares must be');
+
+        $loader->register();
+    }
+
+    /**
+     * @param mixed $middleware
+     * @param string $expectedName
+     * @dataProvider providerInvalidGlobalMiddleware
+     * @covers ::checkMiddlewares
+     */
+    public function testInvalidGlobalMiddlewareThrows(mixed $middleware, string $expectedName): void
+    {
+        $this->expectException(ApiException::class);
+        $this->expectExceptionMessage(sprintf('The middleware %s of ', $expectedName));
+
+        $this->invokeCheckMiddlewares(new RouteLoaderOptions(middlewares: [$middleware]));
+    }
+
+    /**
+     * @return \Generator
+     */
+    public static function providerInvalidGlobalMiddleware(): \Generator
+    {
+        yield 'Not a middleware' => [\stdClass::class, 'stdClass'];
+        yield 'Abstract class' => [AbstractMiddleware::class, AbstractMiddleware::class];
+        yield 'Required constructor argument' => [MiddlewareWithRequiredArgument::class, MiddlewareWithRequiredArgument::class];
+        yield 'Object that is not a middleware' => [new \stdClass(), 'stdClass'];
+        yield 'Closure' => [static fn (): null => null, 'Closure'];
+        yield 'Integer' => [42, 'int'];
+    }
+
+    /**
+     * @covers ::checkMiddlewares
+     */
+    public function testValidGlobalMiddlewaresPass(): void
+    {
+        $this->invokeCheckMiddlewares(new RouteLoaderOptions(middlewares: [
+            FirstMiddleware::class,
+            new MiddlewareWithRequiredArgument('X-Test'),
+        ]));
+
+        $this->addToAssertionCount(1);
+    }
+
+    /**
      * Payloads written before middlewares existed have no "middlewares" key.
      *
      * @covers ::hydrateRoutes
@@ -486,6 +549,13 @@ class RouteLoaderTest extends TestCase
         /** @var Route[] $routes */
         $routes = $method->invoke($loader);
         return $routes;
+    }
+
+    private function invokeCheckMiddlewares(RouteLoaderOptions $options): void
+    {
+        $method = new \ReflectionMethod(RouteLoader::class, 'checkMiddlewares');
+        $method->setAccessible(true);
+        $method->invoke(new RouteLoader('/does/not/exist', $options), $options->middlewares);
     }
 
     /**

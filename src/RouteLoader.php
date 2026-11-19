@@ -13,7 +13,9 @@ use Dbout\WpRestApi\ErrorFormat\DefaultFormatter;
 use Dbout\WpRestApi\Exceptions\ApiException;
 use Dbout\WpRestApi\Helpers\FileLocator;
 use Dbout\WpRestApi\Loaders\AnnotationDirectoryLoader;
+use Dbout\WpRestApi\Middleware\MiddlewareInterface;
 use Dbout\WpRestApi\Wrappers\PermissionWrapper;
+use Dbout\WpRestApi\Wrappers\ReflectionCache;
 use Dbout\WpRestApi\Wrappers\RestWrapper;
 use Psr\Cache\CacheItemPoolInterface;
 use Psr\Cache\InvalidArgumentException;
@@ -449,15 +451,49 @@ class RouteLoader
     }
 
     /**
+     * Checks RouteLoaderOptions::$middlewares when routes are registered, so
+     * an invalid entry fails on every page load rather than on the first REST
+     * request. Done on each call: these middlewares are not stored in the
+     * route cache.
+     *
+     * @param array<mixed> $middlewares Values of RouteLoaderOptions::$middlewares:
+     *                    the property is public and its PHPDoc type is not
+     *                    enforced, so any value can reach this method.
+     * @throws ApiException
+     * @return void
+     */
+    protected function checkMiddlewares(array $middlewares): void
+    {
+        foreach ($middlewares as $middleware) {
+            if ($middleware instanceof MiddlewareInterface) {
+                continue;
+            }
+
+            if (is_string($middleware) && ReflectionCache::isMiddleware($middleware)) {
+                continue;
+            }
+
+            throw new ApiException(sprintf(
+                'The middleware %s of %s::$middlewares must be an instance of %s or an existing class implementing it, instantiable without arguments.',
+                is_string($middleware) ? $middleware : get_debug_type($middleware),
+                RouteLoaderOptions::class,
+                MiddlewareInterface::class,
+            ));
+        }
+    }
+
+    /**
      * Register all routes with register_rest_route
      * @see https://developer.wordpress.org/reference/functions/register_rest_route/
      * @throws \Exception
      * @throws InvalidArgumentException
+     * @throws ApiException When a middleware of RouteLoaderOptions::$middlewares is invalid.
      * @return void
      */
     public function register(): void
     {
         $routes = $this->getRoutes();
+        $this->checkMiddlewares(($this->options ?? new RouteLoaderOptions())->middlewares);
         add_action('rest_api_init', function () use ($routes): void {
             foreach ($routes as $route) {
                 register_rest_route(

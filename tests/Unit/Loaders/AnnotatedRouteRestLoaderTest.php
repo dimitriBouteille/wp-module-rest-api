@@ -16,6 +16,7 @@ use Dbout\WpRestApi\Permissions\IsPublic;
 use Dbout\WpRestApi\ParamSpec;
 use Dbout\WpRestApi\Route;
 use Dbout\WpRestApi\Tests\Unit\fixtures\Loaders\SortDirection;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Loaders\WithAbstractMiddleware\RouteWithAbstractMiddleware;
 use Dbout\WpRestApi\Tests\Unit\fixtures\Loaders\WithActionPaths\RouteWithActionPaths;
 use Dbout\WpRestApi\Tests\Unit\fixtures\Loaders\WithEmptyPath\RouteWithEmptyPath;
 use Dbout\WpRestApi\Tests\Unit\fixtures\Loaders\WithInvalidMiddleware\RouteWithInvalidMiddleware;
@@ -26,6 +27,7 @@ use Dbout\WpRestApi\Tests\Unit\fixtures\Loaders\WithEnumParam\RouteWithEnumParam
 use Dbout\WpRestApi\Tests\Unit\fixtures\Loaders\WithIntParams\RouteWithIntParams;
 use Dbout\WpRestApi\Tests\Unit\fixtures\Loaders\WithParams\RouteWithParams;
 use Dbout\WpRestApi\Tests\Unit\fixtures\Loaders\WithPermissions\RouteWithPermissions;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Middlewares\AbstractMiddleware;
 use Dbout\WpRestApi\Tests\Unit\fixtures\Middlewares\FirstMiddleware;
 use Dbout\WpRestApi\Tests\Unit\fixtures\Middlewares\SecondMiddleware;
 use Dbout\WpRestApi\Tests\Unit\fixtures\Middlewares\ThirdMiddleware;
@@ -297,5 +299,19 @@ class AnnotatedRouteRestLoaderTest extends TestCase
         $this->expectExceptionMessage('The middleware stdClass of ' . RouteWithInvalidMiddleware::class . '::get() must be an existing class implementing');
 
         (new AnnotatedRouteRestLoader())->loadRoutes(RouteWithInvalidMiddleware::class);
+    }
+
+    /**
+     * is_a() accepts abstract classes: the loader must refuse them, or the
+     * route would fail on every request.
+     *
+     * @covers ::collectMiddlewares
+     */
+    public function testAbstractMiddlewareClassThrows(): void
+    {
+        $this->expectException(ApiException::class);
+        $this->expectExceptionMessage('The middleware ' . AbstractMiddleware::class . ' of ' . RouteWithAbstractMiddleware::class . ' must be an existing class implementing');
+
+        (new AnnotatedRouteRestLoader())->loadRoutes(RouteWithAbstractMiddleware::class);
     }
 }

@@ -152,7 +152,8 @@ class AnnotatedRouteRestLoader implements InterfaceLoader
      * fails at registration time rather than on the first request.
      *
      * @param \ReflectionClass<object>|\ReflectionMethod $reflector
-     * @throws ApiException When a class does not exist or does not implement MiddlewareInterface.
+     * @throws ApiException When a class does not exist, does not implement
+     *                      MiddlewareInterface or cannot be instantiated without arguments.
      * @return list<string>
      */
     protected function collectMiddlewares(\ReflectionClass|\ReflectionMethod $reflector): array
@@ -160,9 +161,9 @@ class AnnotatedRouteRestLoader implements InterfaceLoader
         $middlewares = [];
         foreach ($reflector->getAttributes(Middleware::class) as $attribute) {
             foreach ($attribute->newInstance()->classes as $middleware) {
-                if (!is_a($middleware, MiddlewareInterface::class, true)) {
+                if (!ReflectionCache::isMiddleware($middleware)) {
                     throw new ApiException(sprintf(
-                        'The middleware %s of %s must be an existing class implementing %s.',
+                        'The middleware %s of %s must be an existing class implementing %s, instantiable without arguments.',
                         $middleware,
                         $reflector instanceof \ReflectionMethod
                             ? sprintf('%s::%s()', $reflector->getDeclaringClass()->getName(), $reflector->getName())

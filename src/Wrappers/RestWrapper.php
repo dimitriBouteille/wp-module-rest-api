@@ -98,13 +98,12 @@ class RestWrapper
                 continue;
             }
 
-            // Already checked when routes are loaded, unless they come from the cache.
-            if (!is_a($middleware, MiddlewareInterface::class, true)) {
+            // Already checked when routes are registered, unless they come from
+            // the cache or the wrapper is built by hand.
+            if (!ReflectionCache::isMiddleware($middleware)) {
                 throw new ApiException(sprintf(
-                    'The middleware %s of %s::%s() must implement %s.',
+                    'The middleware %s must be an instance of %s or an existing class implementing it, instantiable without arguments.',
                     $middleware,
-                    $this->action->className,
-                    $this->action->methodName,
                     MiddlewareInterface::class,
                 ));
             }

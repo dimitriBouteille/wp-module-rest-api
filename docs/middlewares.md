@@ -24,7 +24,7 @@ class Timing implements MiddlewareInterface
 
 - `$next($request)` runs the next middleware, or the action, and returns its response.
 - Code before `$next()` runs before the action; code after it can read or change the response.
-- The action receives the request passed to `$next()`, so a middleware can add or change parameters with `$request->set_param()`.
+- The action receives the request passed to `$next()`, so a middleware can add or change parameters with `$request->set_param()`. These values are not validated nor sanitized, see [Things to know](#things-to-know).
 
 ## Attaching a middleware
 
@@ -143,8 +143,9 @@ class RateLimit implements MiddlewareInterface
 ## Things to know
 
 - **Middlewares run after the permission check.** WordPress calls the [permission callback](permissions.md) before the action: a middleware can rely on the user being allowed, but a request refused by the permission never reaches the middlewares (a rate limit does not count it).
+- **Parameters set by a middleware skip validation and sanitization.** WordPress applies the `args` of the route (`#[Param]`: `validate_callback`, `sanitize_callback`, `type`, `enum`…) before the action is called, so before the middlewares. A value set with `$request->set_param()` reaches the action with only the cast of its PHP type (`(int)`, `(string)`…): validate and sanitize it in the middleware.
 - **`OPTIONS` requests do not reach the middlewares.** WordPress answers CORS preflight requests itself, without calling the action, so CORS headers set by a middleware only apply to the actual request.
 - **A method cannot remove a class middleware.** Move the action to another class if it must not go through it.
-- **Classes are checked when routes are loaded**: a class that does not exist or does not implement `MiddlewareInterface` throws an `ApiException`.
+- **Middlewares are checked when routes are registered**, those of `#[Middleware]` as well as those of `RouteLoaderOptions`: a class that does not exist, does not implement `MiddlewareInterface`, is abstract or has a required constructor argument throws an `ApiException`, as does a value that is neither a class name nor a middleware instance.
 - **Middlewares are instantiated without arguments** on each request. Use `RouteLoaderOptions::$middlewares` with an instance when a middleware needs dependencies.
 - The class names are stored in the [route cache](configuration.md#cache); the middlewares of `RouteLoaderOptions` are not, changing them does not require a cache rebuild.

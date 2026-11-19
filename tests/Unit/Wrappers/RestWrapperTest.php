@@ -13,6 +13,7 @@ use Dbout\WpRestApi\RouteAction;
 use Dbout\WpRestApi\Tests\Unit\fixtures\IntPriority;
 use Dbout\WpRestApi\Tests\Unit\fixtures\Middlewares\CatchingMiddleware;
 use Dbout\WpRestApi\Tests\Unit\fixtures\Middlewares\FirstMiddleware;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Middlewares\MiddlewareWithRequiredArgument;
 use Dbout\WpRestApi\Tests\Unit\fixtures\Middlewares\RecordingMiddleware;
 use Dbout\WpRestApi\Tests\Unit\fixtures\Middlewares\RouteWithMiddlewareLog;
 use Dbout\WpRestApi\Tests\Unit\fixtures\Middlewares\SecondMiddleware;
@@ -612,7 +613,29 @@ class RestWrapperTest extends TestCase
 
         $this->assertSame(500, $response->get_status());
         $this->assertStringContainsString(
-            'The middleware stdClass of ' . RouteWithMiddlewareLog::class . '::execute() must implement',
+            'The middleware stdClass must be an instance of',
+            $response->get_data()['error']['message'] ?? '',
+        );
+    }
+
+    /**
+     * @covers ::buildMiddlewares
+     */
+    public function testUninstantiableMiddlewareProducesErrorResponse(): void
+    {
+        $action = new RouteAction(
+            RouteWithMiddlewareLog::class,
+            'execute',
+            ['GET'],
+            null,
+            middlewares: [MiddlewareWithRequiredArgument::class],
+        );
+
+        $response = (new RestWrapper($action, true))->execute(new \WP_REST_Request());
+
+        $this->assertSame(500, $response->get_status());
+        $this->assertStringContainsString(
+            'The middleware ' . MiddlewareWithRequiredArgument::class . ' must be an instance of',
             $response->get_data()['error']['message'] ?? '',
         );
     }
