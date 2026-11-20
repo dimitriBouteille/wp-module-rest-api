@@ -8,6 +8,14 @@
 
 namespace Dbout\WpRestApi\Permissions;
 
+/**
+ * Checks current_user_can('editor'), a role name and not a capability.
+ *
+ * Prefer {@see HasCapability} for new code, for example
+ * `new HasCapability('edit_others_posts')`:
+ * role checks break with custom roles or plugins that change them. Use
+ * {@see HasRole} to check the role itself.
+ */
 class IsEditor implements PermissionInterface
 {
     /**

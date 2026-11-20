@@ -9,6 +9,8 @@
 namespace Dbout\WpRestApi\Tests\Unit;
 
 use Dbout\WpRestApi\Exceptions\ApiException;
+use Dbout\WpRestApi\Permissions\AnyOf;
+use Dbout\WpRestApi\Permissions\HasCapability;
 use Dbout\WpRestApi\Route;
 use Dbout\WpRestApi\RouteAction;
 use Dbout\WpRestApi\RouteLoader;
@@ -180,6 +182,106 @@ class RouteLoaderTest extends TestCase
         }
 
         $this->assertFalse($cache->getItem($loader->getCacheKey())->isHit());
+    }
+
+    /**
+     * @covers ::dehydrateRoutes
+     * @covers ::hydrateRoutes
+     */
+    public function testPermissionObjectsSurviveCacheRoundtrip(): void
+    {
+        $cache = new ArrayCachePool();
+        $loader = new RouteLoader(
+            __DIR__ . '/fixtures/Loaders/WithComposedPermissions',
+            new RouteLoaderOptions(cache: $cache),
+        );
+
+        $first = $this->invokeGetRoutes($loader);
+        $this->assertTrue($cache->getItem($loader->getCacheKey())->isHit(), 'Permission objects of the package MUST not skip the cache.');
+
+        $bogus = new RouteLoader('/does/not/exist', new RouteLoaderOptions(cache: $cache));
+        $second = $this->invokeGetRoutes($bogus);
+
+        $permissions = static fn (array $routes): array => array_map(
+            static fn (RouteAction $action): mixed => $action->permissionCallback,
+            $routes[0]->actions,
+        );
+        $this->assertInstanceOf(AnyOf::class, $first[0]->actions[0]->permissionCallback);
+        $this->assertInstanceOf(HasCapability::class, $first[0]->actions[1]->permissionCallback);
+        $this->assertEquals($permissions($first), $permissions($second));
+    }
+
+    /**
+     * @covers ::dehydrateRoutes
+     */
+    public function testPermissionObjectOutsideThePackageSkipsCache(): void
+    {
+        $cache = new ArrayCachePool();
+        $loader = new class (self::FIXTURE_DIR, new RouteLoaderOptions(cache: $cache)) extends RouteLoader {
+            protected function findRoutes(): array
+            {
+                return [
+                    new Route('demo/v1', '/object', [
+                        new RouteAction(
+                            \Dbout\WpRestApi\Tests\Unit\fixtures\RouteLoader\PingRoute::class,
+                            'ping',
+                            ['GET'],
+                            new AnyOf(new PermissionWithDependency(true)),
+                        ),
+                    ]),
+                ];
+            }
+        };
+
+        set_error_handler(static fn (): bool => true, \E_USER_NOTICE);
+        try {
+            $this->invokeGetRoutes($loader);
+        } finally {
+            restore_error_handler();
+        }
+
+        $this->assertFalse($cache->getItem($loader->getCacheKey())->isHit());
+    }
+
+    /**
+     * @covers ::hydrateRoutes
+     */
+    public function testInvalidCachedPermissionFallsBackToDiscovery(): void
+    {
+        $cache = new ArrayCachePool();
+        $loader = new RouteLoader(self::FIXTURE_DIR, new RouteLoaderOptions(cache: $cache));
+        $item = $cache->getItem($loader->getCacheKey());
+        $item->set(json_encode([[
+            'namespace' => 'test-cache/v1',
+            'path' => '/stale',
+            'actions' => [[
+                'className' => 'App\\Stale',
+                'methodName' => 'get',
+                'methods' => ['GET'],
+                'permissionCallback' => ['@permission' => \ArrayObject::class, 'arguments' => []],
+            ]],
+        ]]));
+        $cache->save($item);
+
+        $routes = $this->invokeGetRoutes($loader);
+
+        $this->assertSame('test-cache/v1', $routes[0]->namespace);
+        $this->assertNotSame('/stale', $routes[0]->path);
+    }
+
+    /**
+     * @covers ::checkConstructors
+     * @covers ::permissionClasses
+     */
+    public function testNestedPermissionClassIsChecked(): void
+    {
+        $this->expectException(ApiException::class);
+        $this->expectExceptionMessage(sprintf(
+            'The class %s cannot be instantiated without arguments: set RouteLoaderOptions::$container to inject its dependencies.',
+            PermissionWithDependency::class,
+        ));
+
+        $this->invokeGetRoutes(new RouteLoader(__DIR__ . '/fixtures/Loaders/WithNestedPermissionDependency'));
     }
 
     /**

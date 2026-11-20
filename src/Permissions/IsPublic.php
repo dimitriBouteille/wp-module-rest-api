@@ -14,7 +14,7 @@ namespace Dbout\WpRestApi\Permissions;
  * Use it on an #[Action] to make it public when its #[Route] declares a
  * permission: a null permissionCallback on the action inherits the route one.
  */
-final class IsPublic implements PermissionInterface
+final class IsPublic implements PermissionInterface, CacheablePermissionInterface
 {
     /**
      * @inheritDoc
@@ -22,5 +22,13 @@ final class IsPublic implements PermissionInterface
     public function allow(\WP_REST_Request $request): bool
     {
         return true;
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function cacheArguments(): array
+    {
+        return [];
     }
 }

@@ -14,7 +14,9 @@ use Dbout\WpRestApi\Exceptions\ApiException;
 use Dbout\WpRestApi\Helpers\FileLocator;
 use Dbout\WpRestApi\Loaders\AnnotationDirectoryLoader;
 use Dbout\WpRestApi\Middleware\MiddlewareInterface;
+use Dbout\WpRestApi\Permissions\CompositePermission;
 use Dbout\WpRestApi\Wrappers\ClassFactory;
+use Dbout\WpRestApi\Wrappers\PermissionCodec;
 use Dbout\WpRestApi\Wrappers\PermissionWrapper;
 use Dbout\WpRestApi\Wrappers\ReflectionCache;
 use Dbout\WpRestApi\Wrappers\RestWrapper;
@@ -230,11 +232,17 @@ class RouteLoader
                     }
                 }
 
+                try {
+                    $permissionCallback = PermissionCodec::decode($rawAction['permissionCallback'] ?? null);
+                } catch (\Throwable) {
+                    return null;
+                }
+
                 $actions[] = new RouteAction(
                     $className,
                     $methodName,
                     array_values(array_filter($methods, is_string(...))),
-                    $rawAction['permissionCallback'] ?? null,
+                    $permissionCallback,
                     $params,
                     $middlewares,
                 );
@@ -254,7 +262,8 @@ class RouteLoader
      * @param Route[] $routes
      * @return string|null JSON payload, or null when at least one route uses
      *                    a permissionCallback that cannot be safely cached
-     *                    (e.g. a Closure or a non-callable object).
+     *                    (e.g. a Closure or an object that is not a
+     *                    permission of the package).
      */
     protected function dehydrateRoutes(array $routes): ?string
     {
@@ -262,9 +271,11 @@ class RouteLoader
         foreach ($routes as $route) {
             $actions = [];
             foreach ($route->actions as $action) {
-                if (!$this->isCacheableCallback($action->permissionCallback)) {
+                try {
+                    $permissionCallback = PermissionCodec::encode($action->permissionCallback);
+                } catch (\InvalidArgumentException) {
                     trigger_error(sprintf(
-                        'Route %s/%s has a permissionCallback that cannot be cached (Closure or non-serializable value); the route cache will be skipped.',
+                        'Route %s/%s has a permissionCallback that cannot be cached (Closure or object that is not a permission of the package); the route cache will be skipped.',
                         $route->namespace,
                         $route->path,
                     ), \E_USER_NOTICE);
@@ -287,7 +298,7 @@ class RouteLoader
                     'className' => $action->className,
                     'methodName' => $action->methodName,
                     'methods' => $action->methods,
-                    'permissionCallback' => $action->permissionCallback,
+                    'permissionCallback' => $permissionCallback,
                     'params' => $serializedParams,
                     'middlewares' => $action->middlewares,
                 ];
@@ -366,7 +377,7 @@ class RouteLoader
     }
 
     /**
-     * Whether the given permission callback can be safely persisted as JSON
+     * Whether the given Param callback can be safely persisted as JSON
      * and rebuilt as a usable callback later on.
      */
     protected function isCacheableCallback(mixed $callback): bool
@@ -479,10 +490,7 @@ class RouteLoader
                 }
 
                 $classes = [$className, ...$action->middlewares];
-                $permission = $action->permissionCallback;
-                if (is_string($permission) && class_exists($permission) && ReflectionCache::implementsPermissionInterface($permission)) {
-                    $classes[] = $permission;
-                }
+                array_push($classes, ...$this->permissionClasses($action->permissionCallback));
 
                 foreach (ReflectionCache::parameters($className, $action->methodName) as $descriptor) {
                     if ($descriptor->resolverClass !== null) {
@@ -504,6 +512,31 @@ class RouteLoader
                 }
             }
         }
+    }
+
+    /**
+     * PermissionInterface class names the permission creates on each
+     * request, including the ones nested in AnyOf / AllOf.
+     *
+     * @param mixed $permission
+     * @return list<string>
+     */
+    protected function permissionClasses(mixed $permission): array
+    {
+        if ($permission instanceof CompositePermission) {
+            $classes = [];
+            foreach ($permission->checks as $check) {
+                array_push($classes, ...$this->permissionClasses($check));
+            }
+
+            return $classes;
+        }
+
+        if (is_string($permission) && class_exists($permission) && ReflectionCache::implementsPermissionInterface($permission)) {
+            return [$permission];
+        }
+
+        return [];
     }
 
     /**

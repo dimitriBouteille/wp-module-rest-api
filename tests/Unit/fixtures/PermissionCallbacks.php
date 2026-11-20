@@ -19,4 +19,9 @@ class PermissionCallbacks
     {
         return false;
     }
+
+    public static function error(\WP_REST_Request $request): \WP_Error
+    {
+        return new \WP_Error('custom_forbidden', 'Custom error.', ['status' => 403]);
+    }
 }
