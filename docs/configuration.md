@@ -14,6 +14,7 @@ $options = new RouteLoaderOptions(
     cacheVersion: '',
     cacheFingerprint: false,
     middlewares: [],
+    container: null,
 );
 
 (new NamespaceRouteLoader('App\\Routes\\', $options))->register();
@@ -28,6 +29,7 @@ $options = new RouteLoaderOptions(
 | `cacheVersion`   | `string`                              | `''`                     | Added to the cache key: changing it rebuilds the cache, see [Cache invalidation](#cache-invalidation). |
 | `cacheFingerprint` | `bool`                              | `false`                  | Rebuilds the cache when a route file changes, see [Cache invalidation](#cache-invalidation). |
 | `middlewares`    | `array<class-string\|MiddlewareInterface>` | `[]`             | Run around every action of the loader, see [Middlewares](middlewares.md#middlewares-for-every-route). |
+| `container`      | `?Psr\Container\ContainerInterface`   | `null`                   | Creates the controllers, permissions, resolvers and middlewares it has, see [Dependency injection](dependency-injection.md). |
 
 ## Cache
 

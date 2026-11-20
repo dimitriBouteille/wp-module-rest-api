@@ -18,6 +18,12 @@ use Dbout\WpRestApi\Tests\Unit\fixtures\Middlewares\FirstMiddleware;
 use Dbout\WpRestApi\Tests\Unit\fixtures\Middlewares\MiddlewareWithRequiredArgument;
 use Dbout\WpRestApi\Tests\Unit\fixtures\Middlewares\RecordingMiddleware;
 use Dbout\WpRestApi\Tests\Unit\fixtures\Middlewares\ThirdMiddleware;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Container\ArrayContainer;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Container\Greeter;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Container\MiddlewareWithDependency;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Container\PermissionWithDependency;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Container\ResolverWithDependency;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Loaders\WithConstructorDependencies\RouteWithConstructorDependencies;
 use PHPUnit\Framework\TestCase;
 use Psr\Cache\CacheItemInterface;
 use Psr\Cache\CacheItemPoolInterface;
@@ -28,6 +34,7 @@ use Psr\Cache\CacheItemPoolInterface;
 class RouteLoaderTest extends TestCase
 {
     private const FIXTURE_DIR = __DIR__ . '/fixtures/RouteLoader';
+    private const CONSTRUCTOR_DEPENDENCIES_DIR = __DIR__ . '/fixtures/Loaders/WithConstructorDependencies';
 
     /**
      * @covers ::getRoutes
@@ -352,7 +359,6 @@ class RouteLoaderTest extends TestCase
     {
         yield 'Not a middleware' => [\stdClass::class, 'stdClass'];
         yield 'Abstract class' => [AbstractMiddleware::class, AbstractMiddleware::class];
-        yield 'Required constructor argument' => [MiddlewareWithRequiredArgument::class, MiddlewareWithRequiredArgument::class];
         yield 'Object that is not a middleware' => [new \stdClass(), 'stdClass'];
         yield 'Closure' => [static fn () => null, 'Closure'];
         yield 'Integer' => [42, 'int'];
@@ -536,6 +542,127 @@ class RouteLoaderTest extends TestCase
             rmdir($directory . '/Sub');
             rmdir($directory);
         }
+    }
+
+    /**
+     * @covers ::checkMiddlewares
+     */
+    public function testGlobalMiddlewareWithRequiredArgumentNeedsTheContainer(): void
+    {
+        $this->invokeCheckMiddlewares(new RouteLoaderOptions(
+            middlewares: [MiddlewareWithRequiredArgument::class],
+            container: new ArrayContainer([
+                MiddlewareWithRequiredArgument::class => new MiddlewareWithRequiredArgument('X-Test'),
+            ]),
+        ));
+
+        $this->expectException(ApiException::class);
+        $this->expectExceptionMessage(sprintf(
+            'The class %s cannot be instantiated without arguments: set RouteLoaderOptions::$container to inject its dependencies. Used by %s::$middlewares.',
+            MiddlewareWithRequiredArgument::class,
+            RouteLoaderOptions::class,
+        ));
+
+        $this->invokeCheckMiddlewares(new RouteLoaderOptions(middlewares: [MiddlewareWithRequiredArgument::class]));
+    }
+
+    /**
+     * @covers ::checkRoutes
+     * @covers ::checkConstructors
+     */
+    public function testClassesWithRequiredArgumentsPassWhenTheContainerHasThem(): void
+    {
+        $routes = $this->invokeGetRoutes(new RouteLoader(
+            self::CONSTRUCTOR_DEPENDENCIES_DIR,
+            new RouteLoaderOptions(container: new ArrayContainer(self::constructorDependencies())),
+        ));
+
+        $this->assertCount(1, $routes);
+    }
+
+    /**
+     * @param class-string $missing
+     * @dataProvider providerClassMissingFromContainer
+     * @covers ::checkRoutes
+     * @covers ::checkConstructors
+     */
+    public function testClassWithRequiredArgumentsMissingFromContainerThrows(string $missing): void
+    {
+        $services = self::constructorDependencies();
+        unset($services[$missing]);
+        $loader = new RouteLoader(
+            self::CONSTRUCTOR_DEPENDENCIES_DIR,
+            new RouteLoaderOptions(container: new ArrayContainer($services)),
+        );
+
+        $this->expectException(ApiException::class);
+        $this->expectExceptionMessage(sprintf(
+            'The class %s cannot be instantiated without arguments and the container does not provide it: register it as a public service. Used by %s::get().',
+            $missing,
+            RouteWithConstructorDependencies::class,
+        ));
+
+        $this->invokeGetRoutes($loader);
+    }
+
+    /**
+     * @return \Generator
+     */
+    public static function providerClassMissingFromContainer(): \Generator
+    {
+        yield 'Controller' => [RouteWithConstructorDependencies::class];
+        yield 'Middleware' => [MiddlewareWithDependency::class];
+        yield 'Permission' => [PermissionWithDependency::class];
+        yield 'Resolver' => [ResolverWithDependency::class];
+    }
+
+    /**
+     * @covers ::checkConstructors
+     */
+    public function testClassWithRequiredArgumentsWithoutContainerThrows(): void
+    {
+        $this->expectException(ApiException::class);
+        $this->expectExceptionMessage(sprintf(
+            'The class %s cannot be instantiated without arguments: set RouteLoaderOptions::$container to inject its dependencies.',
+            RouteWithConstructorDependencies::class,
+        ));
+
+        $this->invokeGetRoutes(new RouteLoader(self::CONSTRUCTOR_DEPENDENCIES_DIR));
+    }
+
+    /**
+     * The container reaches both wrappers: the permission, the middleware,
+     * the resolver and the controller come from it.
+     *
+     * @covers ::buildRouteArgs
+     * @covers ::classFactory
+     */
+    public function testContainerIsPassedToTheWrappers(): void
+    {
+        $container = new ArrayContainer(self::constructorDependencies());
+        $loader = new RouteLoader(self::CONSTRUCTOR_DEPENDENCIES_DIR, new RouteLoaderOptions(container: $container));
+        $routes = $this->invokeGetRoutes($loader);
+        $args = $this->invokeBuildRouteArgs($loader, $routes[0])[0];
+        $request = new \WP_REST_Request('GET', '/dummy');
+
+        $this->assertTrue($args['permission_callback']($request));
+        $response = $args['callback']($request);
+
+        $this->assertSame(['value' => 'Resolved', 'greeting' => 'Hello'], $response->get_data());
+        $this->assertSame('Hello', $response->get_headers()['X-Greeting'] ?? null);
+    }
+
+    /**
+     * @return array<class-string, object>
+     */
+    private static function constructorDependencies(): array
+    {
+        return [
+            RouteWithConstructorDependencies::class => new RouteWithConstructorDependencies(new Greeter('Hello')),
+            MiddlewareWithDependency::class => new MiddlewareWithDependency(new Greeter('Hello')),
+            PermissionWithDependency::class => new PermissionWithDependency(true),
+            ResolverWithDependency::class => new ResolverWithDependency(new Greeter('Resolved')),
+        ];
     }
 
     /**

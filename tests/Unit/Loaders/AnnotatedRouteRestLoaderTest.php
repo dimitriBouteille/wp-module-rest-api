@@ -32,6 +32,8 @@ use Dbout\WpRestApi\Tests\Unit\fixtures\Middlewares\AbstractMiddleware;
 use Dbout\WpRestApi\Tests\Unit\fixtures\Middlewares\FirstMiddleware;
 use Dbout\WpRestApi\Tests\Unit\fixtures\Middlewares\SecondMiddleware;
 use Dbout\WpRestApi\Tests\Unit\fixtures\Middlewares\ThirdMiddleware;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Container\MiddlewareWithDependency;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Loaders\WithConstructorDependencies\RouteWithConstructorDependencies;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -297,7 +299,7 @@ class AnnotatedRouteRestLoaderTest extends TestCase
     public function testInvalidMiddlewareClassThrows(): void
     {
         $this->expectException(ApiException::class);
-        $this->expectExceptionMessage('The middleware stdClass of ' . RouteWithInvalidMiddleware::class . '::get() must be an existing class implementing');
+        $this->expectExceptionMessage('The middleware stdClass of ' . RouteWithInvalidMiddleware::class . '::get() must be an existing, non-abstract class implementing');
 
         (new AnnotatedRouteRestLoader())->loadRoutes(RouteWithInvalidMiddleware::class);
     }
@@ -311,7 +313,7 @@ class AnnotatedRouteRestLoaderTest extends TestCase
     public function testAbstractMiddlewareClassThrows(): void
     {
         $this->expectException(ApiException::class);
-        $this->expectExceptionMessage('The middleware ' . AbstractMiddleware::class . ' of ' . RouteWithAbstractMiddleware::class . ' must be an existing class implementing');
+        $this->expectExceptionMessage('The middleware ' . AbstractMiddleware::class . ' of ' . RouteWithAbstractMiddleware::class . ' must be an existing, non-abstract class implementing');
 
         (new AnnotatedRouteRestLoader())->loadRoutes(RouteWithAbstractMiddleware::class);
     }
@@ -338,5 +340,18 @@ class AnnotatedRouteRestLoaderTest extends TestCase
             [FirstMiddleware::class, SecondMiddleware::class, ThirdMiddleware::class],
             $byMethod['list'],
         );
+    }
+
+    /**
+     * The constructor is checked by RouteLoader, which knows the container.
+     *
+     * @covers ::collectMiddlewares
+     * @covers ::assertResolvers
+     */
+    public function testClassesWithConstructorArgumentsAreAcceptedWhenLoaded(): void
+    {
+        $routes = (new AnnotatedRouteRestLoader())->loadRoutes(RouteWithConstructorDependencies::class);
+
+        $this->assertSame([MiddlewareWithDependency::class], $routes[0]->actions[0]->middlewares);
     }
 }

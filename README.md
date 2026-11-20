@@ -88,6 +88,7 @@ class DocumentController
 - **Parameter schema**: describe arguments with `#[Param]` (required, default, enum, description, sanitize and validate callbacks). They are registered as WordPress route `args`.
 - **Permissions**: built-in role checks (`IsAdministrator`, `IsEditor`, `IsAuthor`, `IsContributor`, `IsSubscriber`), `IsPublic` to open an action on a protected route, your own `PermissionInterface` classes, or any callable. They can be set on the route or on each action.
 - **Middlewares**: run code around actions (rate limiting, logging, response caching…) with `#[Middleware]` on the class or the method, or for every route of a loader.
+- **Dependency injection**: plug any PSR-11 container to inject services in the constructor of your controllers, permissions, resolvers and middlewares.
 - **Error handling**: throw a `RouteException` (or `NotFoundException`) and it becomes a clean JSON error response with the right HTTP status. The [RFC 7807](https://www.rfc-editor.org/rfc/rfc7807) `application/problem+json` format is available through `ProblemJsonFormatter`.
 - **Route discovery**: routes are found from your Composer PSR-4 namespaces. No manual registration.
 - **Cache**: plug any PSR-6 cache pool to skip route discovery in production.
@@ -151,6 +152,7 @@ Stack traces are added to error responses only when both `debug` and the `WP_DEB
 - [Middlewares](docs/middlewares.md)
 - [Error handling](docs/error-handling.md)
 - [Configuration](docs/configuration.md)
+- [Dependency injection](docs/dependency-injection.md)
 - Upgrading from 1.x? Read the [upgrade guide](UPGRADE.md).
 - To learn how the WordPress REST API itself works, read the [official documentation](https://developer.wordpress.org/rest-api/).
 

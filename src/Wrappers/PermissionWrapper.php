@@ -17,9 +17,12 @@ class PermissionWrapper
 {
     /**
      * @param RouteAction $action
+     * @param ClassFactory $classFactory Creates the permission class, through
+     *        the container when one is set.
      */
     public function __construct(
         protected RouteAction $action,
+        protected ClassFactory $classFactory = new ClassFactory(),
     ) {
     }
 
@@ -38,7 +41,7 @@ class PermissionWrapper
         try {
             if (is_string($permissionCallback) && class_exists($permissionCallback) && ReflectionCache::implementsPermissionInterface($permissionCallback)) {
                 /** @var PermissionInterface $instance */
-                $instance = new $permissionCallback();
+                $instance = $this->classFactory->create($permissionCallback);
                 return $instance->allow($request);
             }
 

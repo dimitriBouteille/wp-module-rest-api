@@ -28,12 +28,15 @@ class RestWrapper
      * @param ErrorFormatterInterface $errorFormatter
      * @param array<string|MiddlewareInterface> $globalMiddlewares Class names or
      *        instances, run before the #[Middleware] classes of the action.
+     * @param ClassFactory $classFactory Creates the controller, the resolvers
+     *        and the middlewares, through the container when one is set.
      */
     public function __construct(
         protected RouteAction $action,
         protected bool $debug = false,
         protected ErrorFormatterInterface $errorFormatter = new DefaultFormatter(),
         protected array $globalMiddlewares = [],
+        protected ClassFactory $classFactory = new ClassFactory(),
     ) {
     }
 
@@ -102,7 +105,7 @@ class RestWrapper
             // the cache or the wrapper is built by hand.
             if (!ReflectionCache::isMiddleware($middleware)) {
                 throw new ApiException(sprintf(
-                    'The middleware %s must be an instance of %s or an existing class implementing it, instantiable without arguments.',
+                    'The middleware %s must be an instance of %s or an existing, non-abstract class implementing it.',
                     $middleware,
                     MiddlewareInterface::class,
                 ));
@@ -117,15 +120,16 @@ class RestWrapper
     }
 
     /**
-     * Creates the controller, the resolvers and the middlewares. Single
-     * entry point so a container can be plugged in later.
+     * Creates the controller, the resolvers and the middlewares: through the
+     * container when it has the class, without arguments otherwise.
      *
      * @param class-string $className
+     * @throws ApiException When the class cannot be created.
      * @return object
      */
     protected function instantiate(string $className): object
     {
-        return new $className();
+        return $this->classFactory->create($className);
     }
 
     /**

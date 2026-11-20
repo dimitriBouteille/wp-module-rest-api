@@ -11,6 +11,7 @@ namespace Dbout\WpRestApi;
 use Dbout\WpRestApi\ErrorFormat\ErrorFormatterInterface;
 use Dbout\WpRestApi\Middleware\MiddlewareInterface;
 use Psr\Cache\CacheItemPoolInterface;
+use Psr\Container\ContainerInterface;
 
 class RouteLoaderOptions
 {
@@ -34,6 +35,10 @@ class RouteLoaderOptions
      *                    Run around every action of this loader, before the
      *                    #[Middleware] of the class and of the method. Not
      *                    stored in the route cache, so instances are accepted.
+     * @param ContainerInterface|null $container Creates the controllers,
+     *                    permission classes, #[Resolve] resolvers and middlewares
+     *                    it has. The other classes are instantiated without
+     *                    arguments. Not stored in the route cache.
      */
     public function __construct(
         public ?CacheItemPoolInterface $cache = null,
@@ -43,6 +48,7 @@ class RouteLoaderOptions
         public string $cacheVersion = '',
         public bool $cacheFingerprint = false,
         public array $middlewares = [],
+        public ?ContainerInterface $container = null,
     ) {
     }
 }
