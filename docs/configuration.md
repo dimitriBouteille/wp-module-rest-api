@@ -53,7 +53,7 @@ Things to know:
 
 - The module sets no expiration on the cache item: it lives as long as your pool's default lifetime allows. See [Cache invalidation](#cache-invalidation) to rebuild it after a deployment.
 - If you register several loaders with the same cache pool, give each one its own `cacheKey`.
-- A route whose `permissionCallback` or `#[Param]` callbacks cannot be stored (for example an object) is not cached: the loader triggers a warning and scans the routes on every request.
+- A route whose `permissionCallback` or `#[Param]` callbacks cannot be stored is not cached: the loader triggers a notice and scans the routes on every request. Class names, function names, `[Class::class, 'method']` arrays and the permission objects of the package (`HasCapability`, `AnyOf`, `IsAdministrator`…) can be stored; closures and objects of your own classes cannot, nor subclasses of the package permissions whose constructor takes other arguments.
 
 ### Cache invalidation
 

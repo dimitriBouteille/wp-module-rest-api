@@ -9,6 +9,9 @@
 namespace Dbout\WpRestApi\Tests\Unit\Wrappers;
 
 use Dbout\WpRestApi\Exceptions\ApiException;
+use Dbout\WpRestApi\Permissions\AllOf;
+use Dbout\WpRestApi\Permissions\AnyOf;
+use Dbout\WpRestApi\Permissions\IsPublic;
 use Dbout\WpRestApi\RouteAction;
 use Dbout\WpRestApi\Tests\Unit\fixtures\AlwaysAllowPermission;
 use Dbout\WpRestApi\Tests\Unit\fixtures\AlwaysDenyPermission;
@@ -170,5 +173,47 @@ class PermissionWrapperTest extends TestCase
         );
 
         $this->assertTrue($wrapper->execute(new \WP_REST_Request()));
+    }
+
+    /**
+     * @covers ::execute
+     * @covers ::resolve
+     */
+    public function testPermissionObject(): void
+    {
+        $this->assertTrue($this->createWrapper(new AlwaysAllowPermission())->execute(new \WP_REST_Request()));
+
+        $result = $this->createWrapper(new AlwaysDenyPermission())->execute(new \WP_REST_Request());
+        $this->assertInstanceOf(\WP_Error::class, $result);
+        $this->assertSame('rest_forbidden', $result->get_error_code());
+    }
+
+    /**
+     * @covers ::execute
+     * @covers ::resolve
+     */
+    public function testCompositeCreatesNestedClassesThroughTheContainer(): void
+    {
+        $container = new ArrayContainer([
+            PermissionWithDependency::class => new PermissionWithDependency(true),
+        ]);
+        $wrapper = new PermissionWrapper(
+            new RouteAction('MyClass', 'execute', ['GET'], new AllOf(new IsPublic(), new AnyOf(PermissionWithDependency::class))),
+            new ClassFactory($container),
+        );
+
+        $this->assertTrue($wrapper->execute(new \WP_REST_Request()));
+        $this->assertSame([PermissionWithDependency::class], $container->requested);
+    }
+
+    /**
+     * @covers ::resolve
+     */
+    public function testResolveConvertsPermissionExceptionToWpError(): void
+    {
+        $result = PermissionWrapper::resolve(AlwaysDenyPermission::class, new \WP_REST_Request());
+
+        $this->assertInstanceOf(\WP_Error::class, $result);
+        $this->assertSame('Access denied for testing.', $result->get_error_message());
     }
 }

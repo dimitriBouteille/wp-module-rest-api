@@ -19,7 +19,10 @@ class Action
 {
     /**
      * @param Method|array<Method> $methods
-     * @param mixed|null $permissionCallback This is a function that checks if the user can perform the action (reading, updating, etc.) before the real callback is called.
+     * @param mixed|null $permissionCallback Checks if the user can perform the action before the real callback is called:
+     *                                       a PermissionInterface class name, a permission object such as
+     *                                       `new HasCapability('manage_options')` or `new AnyOf(...)`, or a callable.
+     *                                       Replaces the #[Route] permission; null inherits it.
      * @param string|null $path Appended to the #[Route] path, for example '/{id:\d+}'. Actions sharing the same final path are registered as one WordPress route.
      */
     public function __construct(
