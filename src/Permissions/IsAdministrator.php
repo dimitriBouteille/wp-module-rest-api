@@ -16,7 +16,7 @@ namespace Dbout\WpRestApi\Permissions;
  * role checks break with custom roles or plugins that change them. Use
  * {@see HasRole} to check the role itself.
  */
-class IsAdministrator implements PermissionInterface
+class IsAdministrator implements PermissionInterface, CacheablePermissionInterface
 {
     /**
      * @inheritDoc
@@ -24,5 +24,13 @@ class IsAdministrator implements PermissionInterface
     public function allow(\WP_REST_Request $request): bool
     {
         return current_user_can('administrator');
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function cacheArguments(): array
+    {
+        return [];
     }
 }

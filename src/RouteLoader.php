@@ -234,7 +234,14 @@ class RouteLoader
 
                 try {
                     $permissionCallback = PermissionCodec::decode($rawAction['permissionCallback'] ?? null);
-                } catch (\Throwable) {
+                } catch (\Throwable $exception) {
+                    trigger_error(sprintf(
+                        'The cached permissionCallback of route %s/%s cannot be rebuilt (%s); the routes will be discovered again.',
+                        $namespace,
+                        $path,
+                        $exception->getMessage(),
+                    ), \E_USER_NOTICE);
+
                     return null;
                 }
 
@@ -273,11 +280,12 @@ class RouteLoader
             foreach ($route->actions as $action) {
                 try {
                     $permissionCallback = PermissionCodec::encode($action->permissionCallback);
-                } catch (\InvalidArgumentException) {
+                } catch (\InvalidArgumentException $exception) {
                     trigger_error(sprintf(
-                        'Route %s/%s has a permissionCallback that cannot be cached (Closure or object that is not a permission of the package); the route cache will be skipped.',
+                        'Route %s/%s has a permissionCallback that cannot be cached (%s); the route cache will be skipped.',
                         $route->namespace,
                         $route->path,
+                        $exception->getMessage(),
                     ), \E_USER_NOTICE);
 
                     return null;

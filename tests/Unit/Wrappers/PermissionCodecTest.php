@@ -10,13 +10,23 @@ namespace Dbout\WpRestApi\Tests\Unit\Wrappers;
 
 use Dbout\WpRestApi\Permissions\AllOf;
 use Dbout\WpRestApi\Permissions\AnyOf;
+use Dbout\WpRestApi\Permissions\CacheablePermissionInterface;
 use Dbout\WpRestApi\Permissions\CompositePermission;
 use Dbout\WpRestApi\Permissions\HasCapability;
 use Dbout\WpRestApi\Permissions\HasRole;
+use Dbout\WpRestApi\Permissions\IsAdministrator;
+use Dbout\WpRestApi\Permissions\IsAuthor;
+use Dbout\WpRestApi\Permissions\IsContributor;
+use Dbout\WpRestApi\Permissions\IsEditor;
 use Dbout\WpRestApi\Permissions\IsLoggedIn;
 use Dbout\WpRestApi\Permissions\IsPublic;
+use Dbout\WpRestApi\Permissions\IsSubscriber;
 use Dbout\WpRestApi\Tests\Unit\fixtures\AlwaysAllowPermission;
+use Dbout\WpRestApi\Tests\Unit\fixtures\AlwaysDenyPermission;
+use Dbout\WpRestApi\Tests\Unit\fixtures\AtLeastPermission;
+use Dbout\WpRestApi\Tests\Unit\fixtures\IsAdministratorOfSite;
 use Dbout\WpRestApi\Tests\Unit\fixtures\PermissionCallbacks;
+use Dbout\WpRestApi\Tests\Unit\fixtures\UntypedAtLeastPermission;
 use Dbout\WpRestApi\Wrappers\PermissionCodec;
 use PHPUnit\Framework\TestCase;
 
@@ -59,6 +69,7 @@ class PermissionCodecTest extends TestCase
             new AllOf(new IsLoggedIn(), new HasCapability('edit_post', 12), [PermissionCallbacks::class, 'allow']),
             new HasRole('editor'),
             new IsPublic(),
+            new AllOf(new IsAdministrator(), new IsEditor(), new IsAuthor(), new IsContributor(), new IsSubscriber()),
         );
 
         $json = json_encode(PermissionCodec::encode($permission), \JSON_THROW_ON_ERROR);
@@ -85,6 +96,35 @@ class PermissionCodecTest extends TestCase
         $this->expectException(\InvalidArgumentException::class);
 
         PermissionCodec::encode(new AlwaysAllowPermission());
+    }
+
+    /**
+     * @param CacheablePermissionInterface $permission
+     * @dataProvider providerPermissionsThatCannotBeRebuilt
+     * @covers ::encode
+     * @covers ::assertRebuildable
+     */
+    public function testPermissionThatCannotBeRebuiltCannotBeEncoded(CacheablePermissionInterface $permission): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessageMatches('/cannot be rebuilt from its cacheArguments/');
+
+        PermissionCodec::encode($permission);
+    }
+
+    /**
+     * @return \Generator
+     */
+    public static function providerPermissionsThatCannotBeRebuilt(): \Generator
+    {
+        yield 'Composite subclass with a typed extra argument' => [
+            new AtLeastPermission(2, AlwaysAllowPermission::class, AlwaysDenyPermission::class),
+        ];
+        yield 'Composite subclass with an untyped extra argument' => [
+            new UntypedAtLeastPermission(2, AlwaysAllowPermission::class, AlwaysDenyPermission::class),
+        ];
+        yield 'Role subclass with a constructor argument' => [new IsAdministratorOfSite(3)];
+        yield 'Nested in a composite' => [new AnyOf(new IsAdministratorOfSite(3))];
     }
 
     /**

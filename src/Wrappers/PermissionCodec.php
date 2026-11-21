@@ -16,8 +16,9 @@ use Dbout\WpRestApi\Permissions\CacheablePermissionInterface;
  *
  * Class names, function names and [class, method] arrays are kept as they
  * are. A CacheablePermissionInterface object is stored as its class name and
- * constructor arguments, and rebuilt with `new $class(...$arguments)`. Any
- * other object, such as a Closure, cannot be cached.
+ * constructor arguments, and rebuilt with `new $class(...$arguments)`; it is
+ * only cached when this rebuilds an equal object. Any other object, such as
+ * a Closure, cannot be cached.
  *
  * @internal
  */
@@ -43,13 +44,43 @@ final class PermissionCodec
         }
 
         if ($permission instanceof CacheablePermissionInterface) {
-            return [
+            $encoded = [
                 self::CLASS_KEY => $permission::class,
                 self::ARGUMENTS_KEY => array_map(self::encode(...), $permission->cacheArguments()),
             ];
+            self::assertRebuildable($permission, $encoded);
+
+            return $encoded;
         }
 
         throw new \InvalidArgumentException(sprintf('A %s permission cannot be cached.', get_debug_type($permission)));
+    }
+
+    /**
+     * Checks that the encoded value rebuilds an equal permission, so that a
+     * payload that cannot be read back, or that would rebuild a different
+     * permission, is never written to the cache. This happens for example
+     * with a subclass whose constructor takes other arguments than the ones
+     * returned by cacheArguments().
+     *
+     * @param CacheablePermissionInterface $permission
+     * @param array<string, mixed> $encoded
+     * @throws \InvalidArgumentException When the permission cannot be rebuilt.
+     * @return void
+     */
+    private static function assertRebuildable(CacheablePermissionInterface $permission, array $encoded): void
+    {
+        $message = sprintf('The %s permission cannot be rebuilt from its cacheArguments().', $permission::class);
+
+        try {
+            $rebuilt = self::decode($encoded);
+        } catch (\Throwable $exception) {
+            throw new \InvalidArgumentException($message, 0, $exception);
+        }
+
+        if ($rebuilt != $permission) {
+            throw new \InvalidArgumentException($message);
+        }
     }
 
     /**

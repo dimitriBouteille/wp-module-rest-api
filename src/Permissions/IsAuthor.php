@@ -16,7 +16,7 @@ namespace Dbout\WpRestApi\Permissions;
  * role checks break with custom roles or plugins that change them. Use
  * {@see HasRole} to check the role itself.
  */
-class IsAuthor implements PermissionInterface
+class IsAuthor implements PermissionInterface, CacheablePermissionInterface
 {
     /**
      * @inheritDoc
@@ -24,5 +24,13 @@ class IsAuthor implements PermissionInterface
     public function allow(\WP_REST_Request $request): bool
     {
         return current_user_can('author');
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function cacheArguments(): array
+    {
+        return [];
     }
 }

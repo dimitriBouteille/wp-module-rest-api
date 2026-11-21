@@ -58,6 +58,10 @@ abstract class CompositePermission implements PermissionInterface, CacheablePerm
     abstract public function check(\WP_REST_Request $request, ClassFactory $classFactory): bool|\WP_Error;
 
     /**
+     * Returns the checks only. A subclass whose constructor takes other
+     * arguments must override this method, otherwise the route cache is
+     * skipped with a notice.
+     *
      * @inheritDoc
      */
     public function cacheArguments(): array

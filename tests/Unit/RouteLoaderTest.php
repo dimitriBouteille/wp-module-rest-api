@@ -263,10 +263,22 @@ class RouteLoaderTest extends TestCase
         ]]));
         $cache->save($item);
 
-        $routes = $this->invokeGetRoutes($loader);
+        $notices = [];
+        set_error_handler(static function (int $errno, string $errstr) use (&$notices): bool {
+            $notices[] = $errstr;
+
+            return true;
+        }, \E_USER_NOTICE);
+        try {
+            $routes = $this->invokeGetRoutes($loader);
+        } finally {
+            restore_error_handler();
+        }
 
         $this->assertSame('test-cache/v1', $routes[0]->namespace);
         $this->assertNotSame('/stale', $routes[0]->path);
+        $this->assertCount(1, $notices, 'A cached permission that cannot be rebuilt MUST raise a notice.');
+        $this->assertStringContainsString('test-cache/v1//stale', $notices[0]);
     }
 
     /**
