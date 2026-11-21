@@ -17,7 +17,9 @@ class Route
     /**
      * @param string $namespace The first URL segment after core prefix. Should be unique to your package/plugin.
      * @param string $route The base URL for route you are adding. Accepts placeholders such as '/documents/{id:\d+}'.
-     * @param string $permissionCallback This is a function that checks if the user can perform the action (reading, updating, etc.) before the real callback is called.
+     * @param mixed $permissionCallback Checks if the user can perform the action before the real callback is called:
+     *                                  a PermissionInterface class name, a permission object such as
+     *                                  `new HasCapability('manage_options')` or `new AnyOf(...)`, or a callable.
      */
     public function __construct(
         public readonly string $namespace,

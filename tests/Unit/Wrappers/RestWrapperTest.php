@@ -11,6 +11,16 @@ namespace Dbout\WpRestApi\Tests\Unit\Wrappers;
 use Dbout\WpRestApi\ErrorFormat\ProblemJsonFormatter;
 use Dbout\WpRestApi\RouteAction;
 use Dbout\WpRestApi\Tests\Unit\fixtures\IntPriority;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Middlewares\CatchingMiddleware;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Middlewares\FirstMiddleware;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Middlewares\MiddlewareWithRequiredArgument;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Middlewares\RecordingMiddleware;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Middlewares\RouteWithMiddlewareLog;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Middlewares\SecondMiddleware;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Middlewares\SetParamMiddleware;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Middlewares\ShortCircuitMiddleware;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Middlewares\ThirdMiddleware;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Middlewares\ThrowingMiddleware;
 use Dbout\WpRestApi\Tests\Unit\fixtures\RouteReturningResponse;
 use Dbout\WpRestApi\Tests\Unit\fixtures\RouteWithInjectionCases;
 use Dbout\WpRestApi\Tests\Unit\fixtures\RouteWithReturnValues;
@@ -23,6 +33,12 @@ use Dbout\WpRestApi\Tests\Unit\fixtures\RouteWithRequestParam;
 use Dbout\WpRestApi\Tests\Unit\fixtures\RouteWithRouteException;
 use Dbout\WpRestApi\Tests\Unit\fixtures\RouteWithTypedParams;
 use Dbout\WpRestApi\Wrappers\RestWrapper;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Container\ArrayContainer;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Container\ControllerWithDependency;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Container\Greeter;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Container\MiddlewareWithDependency;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Container\ResolverWithDependency;
+use Dbout\WpRestApi\Wrappers\ClassFactory;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -473,6 +489,164 @@ class RestWrapperTest extends TestCase
     }
 
     /**
+     * @covers ::execute
+     * @covers ::buildMiddlewares
+     */
+    public function testMiddlewareOrder(): void
+    {
+        RecordingMiddleware::$log = [];
+        $action = new RouteAction(
+            RouteWithMiddlewareLog::class,
+            'execute',
+            ['GET'],
+            null,
+            middlewares: [SecondMiddleware::class, ThirdMiddleware::class],
+        );
+
+        $response = (new RestWrapper($action, globalMiddlewares: [new FirstMiddleware()]))
+            ->execute(new \WP_REST_Request());
+
+        $this->assertSame(200, $response->get_status());
+        $this->assertSame([
+            'FirstMiddleware:before',
+            'SecondMiddleware:before',
+            'ThirdMiddleware:before',
+            'action',
+            'ThirdMiddleware:after',
+            'SecondMiddleware:after',
+            'FirstMiddleware:after',
+        ], RecordingMiddleware::$log);
+    }
+
+    /**
+     * @covers ::execute
+     */
+    public function testMiddlewareShortCircuit(): void
+    {
+        RecordingMiddleware::$log = [];
+        $action = new RouteAction(
+            RouteWithMiddlewareLog::class,
+            'execute',
+            ['GET'],
+            null,
+            middlewares: [FirstMiddleware::class, ShortCircuitMiddleware::class, SecondMiddleware::class],
+        );
+
+        $response = (new RestWrapper($action))->execute(new \WP_REST_Request());
+
+        $this->assertSame(203, $response->get_status());
+        $this->assertSame(['cached' => true], $response->get_data());
+        $this->assertSame(
+            ['FirstMiddleware:before', 'ShortCircuitMiddleware', 'FirstMiddleware:after'],
+            RecordingMiddleware::$log,
+            'Neither the next middleware nor the action must run.',
+        );
+    }
+
+    /**
+     * @covers ::execute
+     * @covers ::onError
+     */
+    public function testMiddlewareExceptionIsFormatted(): void
+    {
+        $action = new RouteAction(
+            RouteWithMiddlewareLog::class,
+            'execute',
+            ['GET'],
+            null,
+            middlewares: [ThrowingMiddleware::class],
+        );
+
+        $response = (new RestWrapper($action))->execute(new \WP_REST_Request());
+
+        $this->exceptionAsserts($response, 'Too many requests.', 429);
+        $this->assertSame('rate-limited', $response->get_data()['error']['code'] ?? null);
+    }
+
+    /**
+     * @covers ::runAction
+     */
+    public function testMiddlewareCanModifyRequestBeforeAction(): void
+    {
+        $action = new RouteAction(
+            RouteWithMiddlewareLog::class,
+            'withName',
+            ['GET'],
+            null,
+            middlewares: [SetParamMiddleware::class],
+        );
+
+        $response = (new RestWrapper($action))->execute(new \WP_REST_Request());
+
+        $this->assertSame(['name' => 'from-middleware'], $response->get_data());
+    }
+
+    /**
+     * @covers ::execute
+     */
+    public function testMiddlewareCanCatchActionException(): void
+    {
+        $action = new RouteAction(
+            RouteWithMiddlewareLog::class,
+            'fail',
+            ['GET'],
+            null,
+            middlewares: [CatchingMiddleware::class],
+        );
+
+        $response = (new RestWrapper($action))->execute(new \WP_REST_Request());
+
+        $this->assertSame(409, $response->get_status());
+        $this->assertSame(['caught' => 'Action failed.'], $response->get_data());
+    }
+
+    /**
+     * Middlewares coming from the cache are not checked when routes are loaded.
+     *
+     * @covers ::buildMiddlewares
+     */
+    public function testInvalidMiddlewareProducesErrorResponse(): void
+    {
+        $action = new RouteAction(
+            RouteWithMiddlewareLog::class,
+            'execute',
+            ['GET'],
+            null,
+            middlewares: [\stdClass::class],
+        );
+
+        $response = (new RestWrapper($action, true))->execute(new \WP_REST_Request());
+
+        $this->assertSame(500, $response->get_status());
+        $this->assertStringContainsString(
+            'The middleware stdClass must be an instance of',
+            $response->get_data()['error']['message'] ?? '',
+        );
+    }
+
+    /**
+     * @covers ::buildMiddlewares
+     */
+    public function testUninstantiableMiddlewareProducesErrorResponse(): void
+    {
+        $action = new RouteAction(
+            RouteWithMiddlewareLog::class,
+            'execute',
+            ['GET'],
+            null,
+            middlewares: [MiddlewareWithRequiredArgument::class],
+        );
+
+        $response = (new RestWrapper($action, true))->execute(new \WP_REST_Request());
+
+        $this->assertSame(500, $response->get_status());
+        $this->assertStringContainsString(
+            'The class ' . MiddlewareWithRequiredArgument::class . ' cannot be instantiated without arguments',
+            $response->get_data()['error']['message'] ?? '',
+        );
+    }
+
+    /**
      * @param string $method
      * @return void
      * @dataProvider providerWpErrorInvalidStatus
@@ -665,5 +839,102 @@ class RestWrapperTest extends TestCase
         $this->assertInstanceOf(\WP_REST_Response::class, $response);
         $this->assertEquals($expectedHttpCode, $response->get_status());
         $this->assertEquals($expectedMessage, $error['message'] ?? null);
+    }
+
+    /**
+     * @covers ::instantiate
+     * @covers ::runAction
+     */
+    public function testContainerIsUsedWhenAvailable(): void
+    {
+        $container = new ArrayContainer([
+            ControllerWithDependency::class => new ControllerWithDependency(new Greeter('Hello')),
+        ]);
+        $action = new RouteAction(ControllerWithDependency::class, 'hello', ['GET'], null);
+
+        $response = (new RestWrapper($action, classFactory: new ClassFactory($container)))
+            ->execute(new \WP_REST_Request());
+
+        $this->assertSame(200, $response->get_status());
+        $this->assertSame(['message' => 'Hello'], $response->get_data());
+    }
+
+    /**
+     * @covers ::instantiate
+     */
+    public function testFallsBackToNewInstanceWhenContainerMissesClass(): void
+    {
+        $action = new RouteAction(RouteReturningResponse::class, 'execute', ['GET'], null);
+
+        $response = (new RestWrapper($action, classFactory: new ClassFactory(new ArrayContainer())))
+            ->execute(new \WP_REST_Request());
+
+        $this->assertSame(200, $response->get_status());
+    }
+
+    /**
+     * @covers ::buildMiddlewares
+     */
+    public function testContainerResolvesMiddlewares(): void
+    {
+        RecordingMiddleware::$log = [];
+        $container = new ArrayContainer([
+            MiddlewareWithDependency::class => new MiddlewareWithDependency(new Greeter('Hello')),
+            FirstMiddleware::class => new FirstMiddleware(),
+        ]);
+        $action = new RouteAction(
+            RouteWithMiddlewareLog::class,
+            'execute',
+            ['GET'],
+            null,
+            middlewares: [MiddlewareWithDependency::class],
+        );
+
+        $response = (new RestWrapper(
+            $action,
+            globalMiddlewares: [FirstMiddleware::class],
+            classFactory: new ClassFactory($container),
+        ))->execute(new \WP_REST_Request());
+
+        $this->assertSame(200, $response->get_status());
+        $this->assertSame('Hello', $response->get_headers()['X-Greeting'] ?? null);
+        $this->assertSame(
+            [FirstMiddleware::class, MiddlewareWithDependency::class],
+            $container->requested,
+            'Global and attribute middlewares both go through the container.',
+        );
+    }
+
+    /**
+     * @covers ::resolveArgument
+     */
+    public function testContainerResolvesResolvers(): void
+    {
+        $container = new ArrayContainer([
+            ControllerWithDependency::class => new ControllerWithDependency(new Greeter('Hello')),
+            ResolverWithDependency::class => new ResolverWithDependency(new Greeter('Resolved')),
+        ]);
+        $action = new RouteAction(ControllerWithDependency::class, 'resolved', ['GET'], null);
+
+        $response = (new RestWrapper($action, classFactory: new ClassFactory($container)))
+            ->execute(new \WP_REST_Request());
+
+        $this->assertSame(['value' => 'Resolved'], $response->get_data());
+    }
+
+    /**
+     * @covers ::instantiate
+     */
+    public function testControllerWithRequiredArgumentWithoutContainerProducesErrorResponse(): void
+    {
+        $action = new RouteAction(ControllerWithDependency::class, 'hello', ['GET'], null);
+
+        $response = (new RestWrapper($action, true))->execute(new \WP_REST_Request());
+
+        $this->assertSame(500, $response->get_status());
+        $this->assertStringContainsString(
+            'set RouteLoaderOptions::$container to inject its dependencies',
+            $response->get_data()['error']['message'] ?? '',
+        );
     }
 }

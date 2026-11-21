@@ -10,6 +10,7 @@ namespace Dbout\WpRestApi\Wrappers;
 
 use Dbout\WpRestApi\Attributes\Param;
 use Dbout\WpRestApi\Attributes\Resolve;
+use Dbout\WpRestApi\Middleware\MiddlewareInterface;
 use Dbout\WpRestApi\Permissions\PermissionInterface;
 use Dbout\WpRestApi\Resolvers\ParameterResolverInterface;
 
@@ -28,6 +29,12 @@ final class ReflectionCache
 
     /** @var array<string, bool> */
     private static array $isParameterResolver = [];
+
+    /** @var array<string, bool> */
+    private static array $isMiddleware = [];
+
+    /** @var array<string, bool> */
+    private static array $isInstantiableWithoutArguments = [];
 
     /**
      * Returns the resolved parameter descriptors for the given method.
@@ -83,7 +90,9 @@ final class ReflectionCache
     }
 
     /**
-     * Whether the given class exists and implements ParameterResolverInterface.
+     * Whether the given class exists, is not abstract and implements
+     * ParameterResolverInterface. Its constructor is not checked, the
+     * container can provide it.
      *
      * @param string $class
      * @phpstan-assert-if-true class-string<ParameterResolverInterface> $class
@@ -94,8 +103,62 @@ final class ReflectionCache
             return self::$isParameterResolver[$class];
         }
 
-        return self::$isParameterResolver[$class] = class_exists($class)
-            && (new \ReflectionClass($class))->implementsInterface(ParameterResolverInterface::class);
+        return self::$isParameterResolver[$class] = self::isConcreteClassImplementing($class, ParameterResolverInterface::class);
+    }
+
+    /**
+     * Whether the given class can be used as a middleware: it exists, is not
+     * abstract and implements MiddlewareInterface. Its constructor is not
+     * checked, the container can provide it.
+     *
+     * @param string $class
+     * @phpstan-assert-if-true class-string<MiddlewareInterface> $class
+     */
+    public static function isMiddleware(string $class): bool
+    {
+        if (isset(self::$isMiddleware[$class])) {
+            return self::$isMiddleware[$class];
+        }
+
+        return self::$isMiddleware[$class] = self::isConcreteClassImplementing($class, MiddlewareInterface::class);
+    }
+
+    /**
+     * Whether `new $class()` works: the class exists, is not abstract, has a
+     * public constructor and no required constructor parameter.
+     *
+     * @param class-string $class
+     */
+    public static function isInstantiableWithoutArguments(string $class): bool
+    {
+        if (isset(self::$isInstantiableWithoutArguments[$class])) {
+            return self::$isInstantiableWithoutArguments[$class];
+        }
+
+        if (!class_exists($class)) {
+            return self::$isInstantiableWithoutArguments[$class] = false;
+        }
+
+        $reflection = new \ReflectionClass($class);
+
+        return self::$isInstantiableWithoutArguments[$class] = $reflection->isInstantiable()
+            && ($reflection->getConstructor()?->getNumberOfRequiredParameters() ?? 0) === 0;
+    }
+
+    /**
+     * @param string $class
+     * @param class-string $interface
+     * @return bool
+     */
+    private static function isConcreteClassImplementing(string $class, string $interface): bool
+    {
+        if (!class_exists($class)) {
+            return false;
+        }
+
+        $reflection = new \ReflectionClass($class);
+
+        return !$reflection->isAbstract() && $reflection->implementsInterface($interface);
     }
 
     /**
@@ -107,5 +170,7 @@ final class ReflectionCache
         self::$parameters = [];
         self::$implementsPermissionInterface = [];
         self::$isParameterResolver = [];
+        self::$isMiddleware = [];
+        self::$isInstantiableWithoutArguments = [];
     }
 }

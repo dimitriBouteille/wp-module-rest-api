@@ -13,6 +13,8 @@ $options = new RouteLoaderOptions(
     errorFormatter: null,
     cacheVersion: '',
     cacheFingerprint: false,
+    middlewares: [],
+    container: null,
 );
 
 (new NamespaceRouteLoader('App\\Routes\\', $options))->register();
@@ -26,6 +28,8 @@ $options = new RouteLoaderOptions(
 | `errorFormatter` | `?ErrorFormatterInterface`            | `DefaultFormatter`       | Format of error responses, see [Error handling](error-handling.md#rfc-7807-format). |
 | `cacheVersion`   | `string`                              | `''`                     | Added to the cache key: changing it rebuilds the cache, see [Cache invalidation](#cache-invalidation). |
 | `cacheFingerprint` | `bool`                              | `false`                  | Rebuilds the cache when a route file changes, see [Cache invalidation](#cache-invalidation). |
+| `middlewares`    | `array<class-string\|MiddlewareInterface>` | `[]`             | Run around every action of the loader, see [Middlewares](middlewares.md#middlewares-for-every-route). |
+| `container`      | `?Psr\Container\ContainerInterface`   | `null`                   | Creates the controllers, permissions, resolvers and middlewares it has, see [Dependency injection](dependency-injection.md). |
 
 ## Cache
 
@@ -49,7 +53,7 @@ Things to know:
 
 - The module sets no expiration on the cache item: it lives as long as your pool's default lifetime allows. See [Cache invalidation](#cache-invalidation) to rebuild it after a deployment.
 - If you register several loaders with the same cache pool, give each one its own `cacheKey`.
-- A route whose `permissionCallback` or `#[Param]` callbacks cannot be stored (for example an object) is not cached: the loader triggers a warning and scans the routes on every request.
+- A route whose `permissionCallback` or `#[Param]` callbacks cannot be stored is not cached: the loader triggers a notice and scans the routes on every request. Class names, function names, `[Class::class, 'method']` arrays and the permission objects of the package (`HasCapability`, `AnyOf`, `IsAdministrator`…) can be stored; closures and objects of your own classes cannot, nor subclasses of the package permissions whose constructor takes other arguments.
 
 ### Cache invalidation
 

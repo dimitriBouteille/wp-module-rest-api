@@ -93,16 +93,82 @@ In short:
 
 All in the `Dbout\WpRestApi\Permissions` namespace:
 
-| Class             | Check                                  |
-|-------------------|----------------------------------------|
-| `IsAdministrator` | `current_user_can('administrator')`    |
-| `IsEditor`        | `current_user_can('editor')`           |
-| `IsAuthor`        | `current_user_can('author')`           |
-| `IsContributor`   | `current_user_can('contributor')`      |
-| `IsSubscriber`    | `current_user_can('subscriber')`       |
-| `IsPublic`        | none: allows everyone                  |
+| Permission                         | Check                                               |
+|------------------------------------|-----------------------------------------------------|
+| `IsPublic`                         | none: allows everyone                               |
+| `IsLoggedIn`                       | `is_user_logged_in()`                               |
+| `new HasCapability('edit_posts')`  | `current_user_can('edit_posts')`                    |
+| `new HasRole('editor')`            | the user has the `editor` role on the site          |
+| `new AnyOf(…)`                     | at least one of the given permissions               |
+| `new AllOf(…)`                     | all the given permissions                           |
+| `IsAdministrator`                  | `current_user_can('administrator')`                 |
+| `IsEditor`                         | `current_user_can('editor')`                        |
+| `IsAuthor`                         | `current_user_can('author')`                        |
+| `IsContributor`                    | `current_user_can('contributor')`                   |
+| `IsSubscriber`                     | `current_user_can('subscriber')`                    |
+
+Permissions without arguments are given by class name (`IsLoggedIn::class`) or as an object (`new IsLoggedIn()`). Permissions with arguments are given as an object: PHP 8.1 accepts `new` in attribute arguments.
 
 > 💡 For an external client (mobile app, headless front…), the user must be authenticated, for example with [application passwords](https://make.wordpress.org/core/2020/11/05/application-passwords-integration-guide/). Requests from the WordPress admin need the `X-WP-Nonce` header.
+
+## Checking a capability
+
+WordPress [recommends](https://developer.wordpress.org/plugins/users/roles-and-capabilities/) checking capabilities rather than roles: they keep working with custom roles, multisite Super Admins and plugins that change roles. Use `HasCapability`:
+
+```php
+use Dbout\WpRestApi\Permissions\HasCapability;
+
+#[Route('app/v1', '/settings', permissionCallback: new HasCapability('manage_options'))]
+class SettingsController
+{
+    // ...
+}
+```
+
+Extra arguments are passed to `current_user_can()`, for meta capabilities that need an object ID:
+
+```php
+new HasCapability('edit_post', 42)
+```
+
+The `IsAdministrator`, `IsEditor`… classes pass a role name to `current_user_can()`. They still work, but prefer `HasCapability` for new code, for example `new HasCapability('manage_options')` instead of `IsAdministrator::class`. To check the role itself, use `new HasRole('editor')`: it only looks at the roles of the user, so an administrator does not have the `editor` role.
+
+## Combining permissions
+
+`AnyOf` allows the request when at least one permission allows it, `AllOf` when all of them do. They accept the same values as `permissionCallback` (class names, permission objects, callables) and can be nested:
+
+```php
+use Dbout\WpRestApi\Permissions\AllOf;
+use Dbout\WpRestApi\Permissions\AnyOf;
+use Dbout\WpRestApi\Permissions\HasCapability;
+use Dbout\WpRestApi\Permissions\HasRole;
+use Dbout\WpRestApi\Permissions\IsLoggedIn;
+
+#[Route('app/v1', '/reports', permissionCallback: new AnyOf(
+    new HasRole('editor'),
+    new HasCapability('manage_options'),
+))]
+class ReportController
+{
+    #[Action(Method::POST, permissionCallback: new AllOf(
+        new IsLoggedIn(),
+        SignaturePermission::class,
+    ))]
+    public function import(): \WP_REST_Response
+    {
+        // Logged-in users with a valid signature
+    }
+}
+```
+
+Permissions run in order and stop as soon as the result is known. When the request is denied:
+
+- `AllOf` returns the result of the first permission that failed (`false` or its `\WP_Error`);
+- `AnyOf` returns the first `\WP_Error` returned by a permission, or `false` (the default WordPress error) when none returned one.
+
+Class names inside `AnyOf` and `AllOf` are created through the [container](dependency-injection.md) like any other permission class, as long as the loader runs them, that is when they are given in `permissionCallback`.
+
+> ⚠️ Calling `allow()` on `AnyOf` or `AllOf` yourself, for example from your own permission class, does not use the container: the class names they contain are instantiated without arguments. Give the combination in `permissionCallback` instead, or pass permission objects that are already built.
 
 ## Custom permission
 
@@ -148,7 +214,7 @@ class PaymentWebhookController
 
 > 💡 Use `hash_equals()` to compare signatures: a plain `===` comparison is vulnerable to timing attacks. Keep the secret out of the code (constant in `wp-config.php`, environment variable…).
 
-The class is instantiated without arguments, so its constructor must not require any.
+The class is instantiated without arguments, so its constructor must not require any, unless a [container](dependency-injection.md) provides it.
 
 ## Callables
 

@@ -17,8 +17,9 @@ use Dbout\WpRestApi\Resolvers\ParameterResolverInterface;
  * public function show(#[Resolve(PostResolver::class)] \WP_Post $post): \WP_REST_Response
  * ```
  *
- * The resolver class is checked when routes are loaded and instantiated
- * without arguments on each request.
+ * The resolver class is checked when routes are loaded and created on each
+ * request, through the container of RouteLoaderOptions when it has the class,
+ * without arguments otherwise.
  */
 #[\Attribute(\Attribute::TARGET_PARAMETER)]
 final class Resolve
