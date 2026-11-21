@@ -67,6 +67,29 @@ class RouteLoaderIntegrationTest extends \WP_UnitTestCase
         $this->assertSame(401, $inherited->get_status(), 'An action without permission MUST inherit the route one.');
     }
 
+    public function testComposedPermissions(): void
+    {
+        (new RouteLoader(self::FIXTURES_DIR . '/ComposedPermissionRoute'))->register();
+        do_action('rest_api_init');
+        $request = static fn (string $path): \WP_REST_Response => rest_do_request(new \WP_REST_Request('GET', '/integration/v1/composed' . $path));
+
+        wp_set_current_user(0);
+        $this->assertSame(401, $request('')->get_status());
+        $this->assertSame(401, $request('/reports')->get_status());
+
+        wp_set_current_user(self::factory()->user->create(['role' => 'editor']));
+        $this->assertSame(403, $request('')->get_status(), 'AllOf MUST fail when one check fails.');
+        $this->assertSame(200, $request('/reports')->get_status(), 'AnyOf MUST pass when one check passes.');
+
+        wp_set_current_user(self::factory()->user->create(['role' => 'administrator']));
+        $this->assertSame(200, $request('')->get_status());
+        $this->assertSame(['settings' => true], $request('')->get_data());
+        $this->assertSame(200, $request('/reports')->get_status());
+
+        wp_set_current_user(self::factory()->user->create(['role' => 'author']));
+        $this->assertSame(403, $request('/reports')->get_status());
+    }
+
     public function testPathParameterIsExtractedAndCast(): void
     {
         (new RouteLoader(self::FIXTURES_DIR . '/PathParamRoute'))->register();

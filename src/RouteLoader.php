@@ -13,10 +13,16 @@ use Dbout\WpRestApi\ErrorFormat\DefaultFormatter;
 use Dbout\WpRestApi\Exceptions\ApiException;
 use Dbout\WpRestApi\Helpers\FileLocator;
 use Dbout\WpRestApi\Loaders\AnnotationDirectoryLoader;
+use Dbout\WpRestApi\Middleware\MiddlewareInterface;
+use Dbout\WpRestApi\Permissions\CompositePermission;
+use Dbout\WpRestApi\Wrappers\ClassFactory;
+use Dbout\WpRestApi\Wrappers\PermissionCodec;
 use Dbout\WpRestApi\Wrappers\PermissionWrapper;
+use Dbout\WpRestApi\Wrappers\ReflectionCache;
 use Dbout\WpRestApi\Wrappers\RestWrapper;
 use Psr\Cache\CacheItemPoolInterface;
 use Psr\Cache\InvalidArgumentException;
+use Psr\Container\ContainerInterface;
 
 class RouteLoader
 {
@@ -214,12 +220,38 @@ class RouteLoader
                     return null;
                 }
 
+                // Missing in payloads written before middlewares existed.
+                $middlewares = $rawAction['middlewares'] ?? [];
+                if (!is_array($middlewares) || !array_is_list($middlewares)) {
+                    return null;
+                }
+
+                foreach ($middlewares as $middleware) {
+                    if (!is_string($middleware)) {
+                        return null;
+                    }
+                }
+
+                try {
+                    $permissionCallback = PermissionCodec::decode($rawAction['permissionCallback'] ?? null);
+                } catch (\Throwable $exception) {
+                    trigger_error(sprintf(
+                        'The cached permissionCallback of route %s/%s cannot be rebuilt (%s); the routes will be discovered again.',
+                        $namespace,
+                        $path,
+                        $exception->getMessage(),
+                    ), \E_USER_NOTICE);
+
+                    return null;
+                }
+
                 $actions[] = new RouteAction(
                     $className,
                     $methodName,
                     array_values(array_filter($methods, is_string(...))),
-                    $rawAction['permissionCallback'] ?? null,
+                    $permissionCallback,
                     $params,
+                    $middlewares,
                 );
             }
 
@@ -237,7 +269,8 @@ class RouteLoader
      * @param Route[] $routes
      * @return string|null JSON payload, or null when at least one route uses
      *                    a permissionCallback that cannot be safely cached
-     *                    (e.g. a Closure or a non-callable object).
+     *                    (e.g. a Closure or an object that is not a
+     *                    permission of the package).
      */
     protected function dehydrateRoutes(array $routes): ?string
     {
@@ -245,11 +278,14 @@ class RouteLoader
         foreach ($routes as $route) {
             $actions = [];
             foreach ($route->actions as $action) {
-                if (!$this->isCacheableCallback($action->permissionCallback)) {
+                try {
+                    $permissionCallback = PermissionCodec::encode($action->permissionCallback);
+                } catch (\InvalidArgumentException $exception) {
                     trigger_error(sprintf(
-                        'Route %s/%s has a permissionCallback that cannot be cached (Closure or non-serializable value); the route cache will be skipped.',
+                        'Route %s/%s has a permissionCallback that cannot be cached (%s); the route cache will be skipped.',
                         $route->namespace,
                         $route->path,
+                        $exception->getMessage(),
                     ), \E_USER_NOTICE);
 
                     return null;
@@ -270,8 +306,9 @@ class RouteLoader
                     'className' => $action->className,
                     'methodName' => $action->methodName,
                     'methods' => $action->methods,
-                    'permissionCallback' => $action->permissionCallback,
+                    'permissionCallback' => $permissionCallback,
                     'params' => $serializedParams,
+                    'middlewares' => $action->middlewares,
                 ];
             }
 
@@ -348,7 +385,7 @@ class RouteLoader
     }
 
     /**
-     * Whether the given permission callback can be safely persisted as JSON
+     * Whether the given Param callback can be safely persisted as JSON
      * and rebuilt as a usable callback later on.
      */
     protected function isCacheableCallback(mixed $callback): bool
@@ -432,6 +469,130 @@ class RouteLoader
                 ));
             }
         }
+
+        $this->checkConstructors($routes);
+    }
+
+    /**
+     * Checks that the classes created on each request (controller, permission
+     * class, #[Resolve] resolvers, #[Middleware] classes) can be created: the
+     * container has them or they need no constructor argument.
+     *
+     * Done when routes are discovered, not on each register(), so a cache hit
+     * costs no reflection: the error message of ClassFactory still explains
+     * the problem at request time when the container changes afterwards.
+     *
+     * @param array<Route> $routes
+     * @throws ApiException
+     * @throws \ReflectionException
+     * @return void
+     */
+    protected function checkConstructors(array $routes): void
+    {
+        $factory = $this->classFactory();
+        foreach ($routes as $route) {
+            foreach ($route->actions as $action) {
+                $className = $action->className;
+                if (!is_string($className) || !class_exists($className)) {
+                    continue;
+                }
+
+                $classes = [$className, ...$action->middlewares];
+                array_push($classes, ...$this->permissionClasses($action->permissionCallback));
+
+                foreach (ReflectionCache::parameters($className, $action->methodName) as $descriptor) {
+                    if ($descriptor->resolverClass !== null) {
+                        $classes[] = $descriptor->resolverClass;
+                    }
+                }
+
+                foreach ($classes as $class) {
+                    if (!class_exists($class) || $factory->canCreate($class)) {
+                        continue;
+                    }
+
+                    throw new ApiException(sprintf(
+                        '%s Used by %s::%s().',
+                        ClassFactory::cannotCreateMessage($class, $this->options?->container instanceof ContainerInterface),
+                        $className,
+                        $action->methodName,
+                    ));
+                }
+            }
+        }
+    }
+
+    /**
+     * PermissionInterface class names the permission creates on each
+     * request, including the ones nested in AnyOf / AllOf.
+     *
+     * @param mixed $permission
+     * @return list<string>
+     */
+    protected function permissionClasses(mixed $permission): array
+    {
+        if ($permission instanceof CompositePermission) {
+            $classes = [];
+            foreach ($permission->checks as $check) {
+                array_push($classes, ...$this->permissionClasses($check));
+            }
+
+            return $classes;
+        }
+
+        if (is_string($permission) && class_exists($permission) && ReflectionCache::implementsPermissionInterface($permission)) {
+            return [$permission];
+        }
+
+        return [];
+    }
+
+    /**
+     * @return ClassFactory Creates the user classes through the container of
+     *                      the options, when one is set.
+     */
+    protected function classFactory(): ClassFactory
+    {
+        return new ClassFactory($this->options?->container);
+    }
+
+    /**
+     * Checks RouteLoaderOptions::$middlewares when routes are registered, so
+     * an invalid entry fails on every page load rather than on the first REST
+     * request. Done on each call: these middlewares are not stored in the
+     * route cache.
+     *
+     * @param array<mixed> $middlewares Values of RouteLoaderOptions::$middlewares:
+     *                    the property is public and its PHPDoc type is not
+     *                    enforced, so any value can reach this method.
+     * @throws ApiException
+     * @return void
+     */
+    protected function checkMiddlewares(array $middlewares): void
+    {
+        $factory = $this->classFactory();
+        foreach ($middlewares as $middleware) {
+            if ($middleware instanceof MiddlewareInterface) {
+                continue;
+            }
+
+            if (!is_string($middleware) || !ReflectionCache::isMiddleware($middleware)) {
+                throw new ApiException(sprintf(
+                    'The middleware %s of %s::$middlewares must be an instance of %s or an existing, non-abstract class implementing it.',
+                    is_string($middleware) ? $middleware : get_debug_type($middleware),
+                    RouteLoaderOptions::class,
+                    MiddlewareInterface::class,
+                ));
+            }
+
+            if (!$factory->canCreate($middleware)) {
+                throw new ApiException(sprintf(
+                    '%s Used by %s::$middlewares.',
+                    ClassFactory::cannotCreateMessage($middleware, $this->options?->container instanceof ContainerInterface),
+                    RouteLoaderOptions::class,
+                ));
+            }
+        }
     }
 
     /**
@@ -439,11 +600,13 @@ class RouteLoader
      * @see https://developer.wordpress.org/reference/functions/register_rest_route/
      * @throws \Exception
      * @throws InvalidArgumentException
+     * @throws ApiException When a middleware of RouteLoaderOptions::$middlewares is invalid.
      * @return void
      */
     public function register(): void
     {
         $routes = $this->getRoutes();
+        $this->checkMiddlewares(($this->options ?? new RouteLoaderOptions())->middlewares);
         add_action('rest_api_init', function () use ($routes): void {
             foreach ($routes as $route) {
                 register_rest_route(
@@ -465,6 +628,7 @@ class RouteLoader
         $options = $this->options ?? new RouteLoaderOptions();
         $isDebug = $options->debug;
         $errorFormatter = $options->errorFormatter ?? new DefaultFormatter();
+        $classFactory = $this->classFactory();
 
         foreach ($route->actions as $action) {
             $actions[] = [
@@ -473,8 +637,10 @@ class RouteLoader
                     $action,
                     $isDebug,
                     $errorFormatter,
+                    $options->middlewares,
+                    $classFactory,
                 ), 'execute'],
-                'permission_callback' => [new PermissionWrapper($action), 'execute'],
+                'permission_callback' => [new PermissionWrapper($action, $classFactory), 'execute'],
                 'args' => $this->compileArgs($action),
             ];
         }

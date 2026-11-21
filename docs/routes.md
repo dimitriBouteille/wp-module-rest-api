@@ -217,7 +217,7 @@ class PostController
 - The resolver receives the argument (`\ReflectionParameter`: name, type, attributes) and the request. Its return value is passed to the action, whatever the argument type.
 - `#[Resolve]` wins over every other rule, including the request parameter with the same name.
 - Throw a `RouteException` to return an error, see [Error handling](error-handling.md).
-- The resolver class is checked when routes are loaded: a class that does not exist or does not implement the interface throws an `ApiException`. It is instantiated without arguments.
+- The resolver class is checked when routes are loaded: a class that does not exist or does not implement the interface throws an `ApiException`. It is instantiated without arguments, or created by the [container](dependency-injection.md) when one is configured.
 
 ## Return value
 

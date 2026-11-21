@@ -9,10 +9,23 @@
 namespace Dbout\WpRestApi\Tests\Unit;
 
 use Dbout\WpRestApi\Exceptions\ApiException;
+use Dbout\WpRestApi\Permissions\AnyOf;
+use Dbout\WpRestApi\Permissions\HasCapability;
 use Dbout\WpRestApi\Route;
 use Dbout\WpRestApi\RouteAction;
 use Dbout\WpRestApi\RouteLoader;
 use Dbout\WpRestApi\RouteLoaderOptions;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Middlewares\AbstractMiddleware;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Middlewares\FirstMiddleware;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Middlewares\MiddlewareWithRequiredArgument;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Middlewares\RecordingMiddleware;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Middlewares\ThirdMiddleware;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Container\ArrayContainer;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Container\Greeter;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Container\MiddlewareWithDependency;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Container\PermissionWithDependency;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Container\ResolverWithDependency;
+use Dbout\WpRestApi\Tests\Unit\fixtures\Loaders\WithConstructorDependencies\RouteWithConstructorDependencies;
 use PHPUnit\Framework\TestCase;
 use Psr\Cache\CacheItemInterface;
 use Psr\Cache\CacheItemPoolInterface;
@@ -23,6 +36,7 @@ use Psr\Cache\CacheItemPoolInterface;
 class RouteLoaderTest extends TestCase
 {
     private const FIXTURE_DIR = __DIR__ . '/fixtures/RouteLoader';
+    private const CONSTRUCTOR_DEPENDENCIES_DIR = __DIR__ . '/fixtures/Loaders/WithConstructorDependencies';
 
     /**
      * @covers ::getRoutes
@@ -171,6 +185,118 @@ class RouteLoaderTest extends TestCase
     }
 
     /**
+     * @covers ::dehydrateRoutes
+     * @covers ::hydrateRoutes
+     */
+    public function testPermissionObjectsSurviveCacheRoundtrip(): void
+    {
+        $cache = new ArrayCachePool();
+        $loader = new RouteLoader(
+            __DIR__ . '/fixtures/Loaders/WithComposedPermissions',
+            new RouteLoaderOptions(cache: $cache),
+        );
+
+        $first = $this->invokeGetRoutes($loader);
+        $this->assertTrue($cache->getItem($loader->getCacheKey())->isHit(), 'Permission objects of the package MUST not skip the cache.');
+
+        $bogus = new RouteLoader('/does/not/exist', new RouteLoaderOptions(cache: $cache));
+        $second = $this->invokeGetRoutes($bogus);
+
+        $permissions = static fn (array $routes): array => array_map(
+            static fn (RouteAction $action): mixed => $action->permissionCallback,
+            $routes[0]->actions,
+        );
+        $this->assertInstanceOf(AnyOf::class, $first[0]->actions[0]->permissionCallback);
+        $this->assertInstanceOf(HasCapability::class, $first[0]->actions[1]->permissionCallback);
+        $this->assertEquals($permissions($first), $permissions($second));
+    }
+
+    /**
+     * @covers ::dehydrateRoutes
+     */
+    public function testPermissionObjectOutsideThePackageSkipsCache(): void
+    {
+        $cache = new ArrayCachePool();
+        $loader = new class (self::FIXTURE_DIR, new RouteLoaderOptions(cache: $cache)) extends RouteLoader {
+            protected function findRoutes(): array
+            {
+                return [
+                    new Route('demo/v1', '/object', [
+                        new RouteAction(
+                            \Dbout\WpRestApi\Tests\Unit\fixtures\RouteLoader\PingRoute::class,
+                            'ping',
+                            ['GET'],
+                            new AnyOf(new PermissionWithDependency(true)),
+                        ),
+                    ]),
+                ];
+            }
+        };
+
+        set_error_handler(static fn (): bool => true, \E_USER_NOTICE);
+        try {
+            $this->invokeGetRoutes($loader);
+        } finally {
+            restore_error_handler();
+        }
+
+        $this->assertFalse($cache->getItem($loader->getCacheKey())->isHit());
+    }
+
+    /**
+     * @covers ::hydrateRoutes
+     */
+    public function testInvalidCachedPermissionFallsBackToDiscovery(): void
+    {
+        $cache = new ArrayCachePool();
+        $loader = new RouteLoader(self::FIXTURE_DIR, new RouteLoaderOptions(cache: $cache));
+        $item = $cache->getItem($loader->getCacheKey());
+        $item->set(json_encode([[
+            'namespace' => 'test-cache/v1',
+            'path' => '/stale',
+            'actions' => [[
+                'className' => 'App\\Stale',
+                'methodName' => 'get',
+                'methods' => ['GET'],
+                'permissionCallback' => ['@permission' => \ArrayObject::class, 'arguments' => []],
+            ]],
+        ]]));
+        $cache->save($item);
+
+        $notices = [];
+        set_error_handler(static function (int $errno, string $errstr) use (&$notices): bool {
+            $notices[] = $errstr;
+
+            return true;
+        }, \E_USER_NOTICE);
+        try {
+            $routes = $this->invokeGetRoutes($loader);
+        } finally {
+            restore_error_handler();
+        }
+
+        $this->assertSame('test-cache/v1', $routes[0]->namespace);
+        $this->assertNotSame('/stale', $routes[0]->path);
+        $this->assertCount(1, $notices, 'A cached permission that cannot be rebuilt MUST raise a notice.');
+        $this->assertStringContainsString('test-cache/v1//stale', $notices[0]);
+    }
+
+    /**
+     * @covers ::checkConstructors
+     * @covers ::permissionClasses
+     */
+    public function testNestedPermissionClassIsChecked(): void
+    {
+        $this->expectException(ApiException::class);
+        $this->expectExceptionMessage(sprintf(
+            'The class %s cannot be instantiated without arguments: set RouteLoaderOptions::$container to inject its dependencies.',
+            PermissionWithDependency::class,
+        ));
+
+        $this->invokeGetRoutes(new RouteLoader(__DIR__ . '/fixtures/Loaders/WithNestedPermissionDependency'));
+    }
+
+    /**
      * @covers ::buildRouteArgs
      * @covers ::compileArgs
      */
@@ -254,6 +380,158 @@ class RouteLoaderTest extends TestCase
             $this->paramArgsByRequestName($second[0]->actions[0]->params),
             'ParamSpec list must come back identical from the cache.',
         );
+    }
+
+    /**
+     * @covers ::dehydrateRoutes
+     * @covers ::hydrateRoutes
+     */
+    public function testMiddlewaresSurviveCacheRoundtrip(): void
+    {
+        $cache = new ArrayCachePool();
+        $loader = new RouteLoader(
+            __DIR__ . '/fixtures/Loaders/WithMiddlewares',
+            new RouteLoaderOptions(cache: $cache),
+        );
+
+        $first = $this->invokeGetRoutes($loader);
+
+        $bogus = new RouteLoader('/does/not/exist', new RouteLoaderOptions(cache: $cache));
+        $second = $this->invokeGetRoutes($bogus);
+
+        $this->assertNotEmpty($first[0]->actions[0]->middlewares);
+        $this->assertSame(
+            array_map(static fn (RouteAction $action): array => $action->middlewares, $first[0]->actions),
+            array_map(static fn (RouteAction $action): array => $action->middlewares, $second[0]->actions),
+        );
+    }
+
+    /**
+     * @covers ::buildRouteArgs
+     */
+    public function testGlobalMiddlewaresRunBeforeAttributeMiddlewares(): void
+    {
+        $loader = new RouteLoader(
+            __DIR__ . '/fixtures/Loaders/WithMiddlewares',
+            new RouteLoaderOptions(middlewares: [ThirdMiddleware::class]),
+        );
+        $routes = $this->invokeGetRoutes($loader);
+        $args = $this->invokeBuildRouteArgs($loader, $routes[0]);
+        $create = array_values(array_filter($args, static fn (array $arg): bool => $arg['methods'] === ['POST']))[0];
+
+        RecordingMiddleware::$log = [];
+        $create['callback'](new \WP_REST_Request('POST', '/dummy'));
+
+        $this->assertSame([
+            'ThirdMiddleware:before',
+            'FirstMiddleware:before',
+            'SecondMiddleware:before',
+            'SecondMiddleware:after',
+            'FirstMiddleware:after',
+            'ThirdMiddleware:after',
+        ], RecordingMiddleware::$log);
+    }
+
+    /**
+     * The exception is thrown before add_action(), so register() can be
+     * called without WordPress.
+     *
+     * @covers ::register
+     * @covers ::checkMiddlewares
+     */
+    public function testRegisterThrowsOnInvalidGlobalMiddleware(): void
+    {
+        $loader = new RouteLoader(
+            __DIR__ . '/fixtures/Loaders/WithMiddlewares',
+            new RouteLoaderOptions(middlewares: ['App\\Missing\\Middleware']),
+        );
+
+        $this->expectException(ApiException::class);
+        $this->expectExceptionMessage('The middleware App\\Missing\\Middleware of ' . RouteLoaderOptions::class . '::$middlewares must be');
+
+        $loader->register();
+    }
+
+    /**
+     * @param mixed $middleware
+     * @param string $expectedName
+     * @dataProvider providerInvalidGlobalMiddleware
+     * @covers ::checkMiddlewares
+     */
+    public function testInvalidGlobalMiddlewareThrows(mixed $middleware, string $expectedName): void
+    {
+        $this->expectException(ApiException::class);
+        $this->expectExceptionMessage(sprintf('The middleware %s of ', $expectedName));
+
+        $this->invokeCheckMiddlewares(new RouteLoaderOptions(middlewares: [$middleware]));
+    }
+
+    /**
+     * @return \Generator
+     */
+    public static function providerInvalidGlobalMiddleware(): \Generator
+    {
+        yield 'Not a middleware' => [\stdClass::class, 'stdClass'];
+        yield 'Abstract class' => [AbstractMiddleware::class, AbstractMiddleware::class];
+        yield 'Object that is not a middleware' => [new \stdClass(), 'stdClass'];
+        yield 'Closure' => [static fn () => null, 'Closure'];
+        yield 'Integer' => [42, 'int'];
+    }
+
+    /**
+     * @covers ::checkMiddlewares
+     */
+    public function testValidGlobalMiddlewaresPass(): void
+    {
+        $this->invokeCheckMiddlewares(new RouteLoaderOptions(middlewares: [
+            FirstMiddleware::class,
+            new MiddlewareWithRequiredArgument('X-Test'),
+        ]));
+
+        $this->addToAssertionCount(1);
+    }
+
+    /**
+     * Payloads written before middlewares existed have no "middlewares" key.
+     *
+     * @covers ::hydrateRoutes
+     */
+    public function testCachePayloadWithoutMiddlewaresIsAccepted(): void
+    {
+        $cache = new ArrayCachePool();
+        $loader = new RouteLoader('/does/not/exist', new RouteLoaderOptions(cache: $cache));
+        $item = $cache->getItem($loader->getCacheKey());
+        $item->set(json_encode([[
+            'namespace' => 'test-cache/v1',
+            'path' => '/legacy',
+            'actions' => [['className' => 'Foo', 'methodName' => 'bar', 'methods' => ['GET'], 'params' => []]],
+        ]]));
+        $cache->save($item);
+
+        $routes = $this->invokeGetRoutes($loader);
+
+        $this->assertSame('/legacy', $routes[0]->path);
+        $this->assertSame([], $routes[0]->actions[0]->middlewares);
+    }
+
+    /**
+     * @covers ::hydrateRoutes
+     */
+    public function testCachePayloadWithInvalidMiddlewaresFallsBack(): void
+    {
+        $cache = new ArrayCachePool();
+        $loader = new RouteLoader(self::FIXTURE_DIR, new RouteLoaderOptions(cache: $cache));
+        $item = $cache->getItem($loader->getCacheKey());
+        $item->set(json_encode([[
+            'namespace' => 'test-cache/v1',
+            'path' => '/stale',
+            'actions' => [['className' => 'Foo', 'methodName' => 'bar', 'methods' => ['GET'], 'middlewares' => [42]]],
+        ]]));
+        $cache->save($item);
+
+        $routes = $this->invokeGetRoutes($loader);
+
+        $this->assertSame('/ping', $routes[0]->path, 'An invalid payload must trigger a fresh discovery.');
     }
 
     /**
@@ -381,6 +659,127 @@ class RouteLoaderTest extends TestCase
     }
 
     /**
+     * @covers ::checkMiddlewares
+     */
+    public function testGlobalMiddlewareWithRequiredArgumentNeedsTheContainer(): void
+    {
+        $this->invokeCheckMiddlewares(new RouteLoaderOptions(
+            middlewares: [MiddlewareWithRequiredArgument::class],
+            container: new ArrayContainer([
+                MiddlewareWithRequiredArgument::class => new MiddlewareWithRequiredArgument('X-Test'),
+            ]),
+        ));
+
+        $this->expectException(ApiException::class);
+        $this->expectExceptionMessage(sprintf(
+            'The class %s cannot be instantiated without arguments: set RouteLoaderOptions::$container to inject its dependencies. Used by %s::$middlewares.',
+            MiddlewareWithRequiredArgument::class,
+            RouteLoaderOptions::class,
+        ));
+
+        $this->invokeCheckMiddlewares(new RouteLoaderOptions(middlewares: [MiddlewareWithRequiredArgument::class]));
+    }
+
+    /**
+     * @covers ::checkRoutes
+     * @covers ::checkConstructors
+     */
+    public function testClassesWithRequiredArgumentsPassWhenTheContainerHasThem(): void
+    {
+        $routes = $this->invokeGetRoutes(new RouteLoader(
+            self::CONSTRUCTOR_DEPENDENCIES_DIR,
+            new RouteLoaderOptions(container: new ArrayContainer(self::constructorDependencies())),
+        ));
+
+        $this->assertCount(1, $routes);
+    }
+
+    /**
+     * @param class-string $missing
+     * @dataProvider providerClassMissingFromContainer
+     * @covers ::checkRoutes
+     * @covers ::checkConstructors
+     */
+    public function testClassWithRequiredArgumentsMissingFromContainerThrows(string $missing): void
+    {
+        $services = self::constructorDependencies();
+        unset($services[$missing]);
+        $loader = new RouteLoader(
+            self::CONSTRUCTOR_DEPENDENCIES_DIR,
+            new RouteLoaderOptions(container: new ArrayContainer($services)),
+        );
+
+        $this->expectException(ApiException::class);
+        $this->expectExceptionMessage(sprintf(
+            'The class %s cannot be instantiated without arguments and the container does not provide it: register it as a public service. Used by %s::get().',
+            $missing,
+            RouteWithConstructorDependencies::class,
+        ));
+
+        $this->invokeGetRoutes($loader);
+    }
+
+    /**
+     * @return \Generator
+     */
+    public static function providerClassMissingFromContainer(): \Generator
+    {
+        yield 'Controller' => [RouteWithConstructorDependencies::class];
+        yield 'Middleware' => [MiddlewareWithDependency::class];
+        yield 'Permission' => [PermissionWithDependency::class];
+        yield 'Resolver' => [ResolverWithDependency::class];
+    }
+
+    /**
+     * @covers ::checkConstructors
+     */
+    public function testClassWithRequiredArgumentsWithoutContainerThrows(): void
+    {
+        $this->expectException(ApiException::class);
+        $this->expectExceptionMessage(sprintf(
+            'The class %s cannot be instantiated without arguments: set RouteLoaderOptions::$container to inject its dependencies.',
+            RouteWithConstructorDependencies::class,
+        ));
+
+        $this->invokeGetRoutes(new RouteLoader(self::CONSTRUCTOR_DEPENDENCIES_DIR));
+    }
+
+    /**
+     * The container reaches both wrappers: the permission, the middleware,
+     * the resolver and the controller come from it.
+     *
+     * @covers ::buildRouteArgs
+     * @covers ::classFactory
+     */
+    public function testContainerIsPassedToTheWrappers(): void
+    {
+        $container = new ArrayContainer(self::constructorDependencies());
+        $loader = new RouteLoader(self::CONSTRUCTOR_DEPENDENCIES_DIR, new RouteLoaderOptions(container: $container));
+        $routes = $this->invokeGetRoutes($loader);
+        $args = $this->invokeBuildRouteArgs($loader, $routes[0])[0];
+        $request = new \WP_REST_Request('GET', '/dummy');
+
+        $this->assertTrue($args['permission_callback']($request));
+        $response = $args['callback']($request);
+
+        $this->assertSame(['value' => 'Resolved', 'greeting' => 'Hello'], $response->get_data());
+        $this->assertSame('Hello', $response->get_headers()['X-Greeting'] ?? null);
+    }
+
+    /**
+     * @return array<class-string, object>
+     */
+    private static function constructorDependencies(): array
+    {
+        return [
+            RouteWithConstructorDependencies::class => new RouteWithConstructorDependencies(new Greeter('Hello')),
+            MiddlewareWithDependency::class => new MiddlewareWithDependency(new Greeter('Hello')),
+            PermissionWithDependency::class => new PermissionWithDependency(true),
+            ResolverWithDependency::class => new ResolverWithDependency(new Greeter('Resolved')),
+        ];
+    }
+
+    /**
      * @return Route[]
      */
     private function invokeGetRoutes(RouteLoader $loader): array
@@ -391,6 +790,13 @@ class RouteLoaderTest extends TestCase
         /** @var Route[] $routes */
         $routes = $method->invoke($loader);
         return $routes;
+    }
+
+    private function invokeCheckMiddlewares(RouteLoaderOptions $options): void
+    {
+        $method = new \ReflectionMethod(RouteLoader::class, 'checkMiddlewares');
+        $method->setAccessible(true);
+        $method->invoke(new RouteLoader('/does/not/exist', $options), $options->middlewares);
     }
 
     /**

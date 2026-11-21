@@ -12,6 +12,7 @@ use Dbout\WpRestApi\ErrorFormat\DefaultFormatter;
 use Dbout\WpRestApi\ErrorFormat\ErrorFormatterInterface;
 use Dbout\WpRestApi\Exceptions\ApiException;
 use Dbout\WpRestApi\Exceptions\RouteException;
+use Dbout\WpRestApi\Middleware\MiddlewareInterface;
 use Dbout\WpRestApi\Resolvers\ParameterResolverInterface;
 use Dbout\WpRestApi\RouteAction;
 
@@ -25,35 +26,110 @@ class RestWrapper
      * @param RouteAction $action
      * @param bool $debug
      * @param ErrorFormatterInterface $errorFormatter
+     * @param array<string|MiddlewareInterface> $globalMiddlewares Class names or
+     *        instances, run before the #[Middleware] classes of the action.
+     * @param ClassFactory $classFactory Creates the controller, the resolvers
+     *        and the middlewares, through the container when one is set.
      */
     public function __construct(
         protected RouteAction $action,
         protected bool $debug = false,
         protected ErrorFormatterInterface $errorFormatter = new DefaultFormatter(),
+        protected array $globalMiddlewares = [],
+        protected ClassFactory $classFactory = new ClassFactory(),
     ) {
     }
 
     /**
+     * Runs the middlewares then the action. Exceptions thrown by the action
+     * go up through the middlewares and are formatted once, here.
+     *
      * @param \WP_REST_Request $request
      * @return \WP_REST_Response
      */
     public function execute(\WP_REST_Request $request): \WP_REST_Response
     {
         try {
-            $className = $this->action->className;
-            $methodName = $this->action->methodName;
-            $dependencies = $this->collectDependencies($className, $methodName, $request);
-            $instance = new $className();
-            $result = $instance->{$methodName}(...$dependencies);
+            $pipeline = array_reduce(
+                array_reverse($this->buildMiddlewares()),
+                static fn (\Closure $next, MiddlewareInterface $middleware): \Closure =>
+                    static fn (\WP_REST_Request $request): \WP_REST_Response => $middleware->process($request, $next),
+                $this->runAction(...),
+            );
 
-            if ($result instanceof \WP_Error) {
-                return $this->onWpError($result);
-            }
-
-            return $this->toRestResponse($result);
+            return $pipeline($request);
         } catch (\Throwable $exception) {
             return $this->onError($exception);
         }
+    }
+
+    /**
+     * Last step of the pipeline: calls the action with the arguments built
+     * from the request received from the last middleware.
+     *
+     * @param \WP_REST_Request $request
+     * @throws \Throwable
+     * @return \WP_REST_Response
+     */
+    protected function runAction(\WP_REST_Request $request): \WP_REST_Response
+    {
+        $className = $this->action->className;
+        $methodName = $this->action->methodName;
+        $dependencies = $this->collectDependencies($className, $methodName, $request);
+        $instance = $this->instantiate($className);
+        $result = $instance->{$methodName}(...$dependencies);
+
+        if ($result instanceof \WP_Error) {
+            return $this->onWpError($result);
+        }
+
+        return $this->toRestResponse($result);
+    }
+
+    /**
+     * Global middlewares first, then those of the class and of the method.
+     *
+     * @throws ApiException When a middleware class is invalid.
+     * @return list<MiddlewareInterface>
+     */
+    protected function buildMiddlewares(): array
+    {
+        $middlewares = [];
+        foreach ([...$this->globalMiddlewares, ...$this->action->middlewares] as $middleware) {
+            if ($middleware instanceof MiddlewareInterface) {
+                $middlewares[] = $middleware;
+                continue;
+            }
+
+            // Already checked when routes are registered, unless they come from
+            // the cache or the wrapper is built by hand.
+            if (!ReflectionCache::isMiddleware($middleware)) {
+                throw new ApiException(sprintf(
+                    'The middleware %s must be an instance of %s or an existing, non-abstract class implementing it.',
+                    $middleware,
+                    MiddlewareInterface::class,
+                ));
+            }
+
+            /** @var MiddlewareInterface $instance */
+            $instance = $this->instantiate($middleware);
+            $middlewares[] = $instance;
+        }
+
+        return $middlewares;
+    }
+
+    /**
+     * Creates the controller, the resolvers and the middlewares: through the
+     * container when it has the class, without arguments otherwise.
+     *
+     * @param class-string $className
+     * @throws ApiException When the class cannot be created.
+     * @return object
+     */
+    protected function instantiate(string $className): object
+    {
+        return $this->classFactory->create($className);
     }
 
     /**
@@ -265,7 +341,8 @@ class RestWrapper
             ));
         }
 
-        $resolver = new $resolverClass();
+        /** @var ParameterResolverInterface $resolver */
+        $resolver = $this->instantiate($resolverClass);
         return $resolver->resolve(new \ReflectionParameter([$className, $methodName], $descriptor->name), $request);
     }
 
