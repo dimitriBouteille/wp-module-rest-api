@@ -166,7 +166,9 @@ Permissions run in order and stop as soon as the result is known. When the reque
 - `AllOf` returns the result of the first permission that failed (`false` or its `\WP_Error`);
 - `AnyOf` returns the first `\WP_Error` returned by a permission, or `false` (the default WordPress error) when none returned one.
 
-Class names inside `AnyOf` and `AllOf` are created through the [container](dependency-injection.md) like any other permission class.
+Class names inside `AnyOf` and `AllOf` are created through the [container](dependency-injection.md) like any other permission class, as long as the loader runs them, that is when they are given in `permissionCallback`.
+
+> ⚠️ Calling `allow()` on `AnyOf` or `AllOf` yourself, for example from your own permission class, does not use the container: the class names they contain are instantiated without arguments. Give the combination in `permissionCallback` instead, or pass permission objects that are already built.
 
 ## Custom permission
 

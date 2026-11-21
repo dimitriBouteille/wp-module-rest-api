@@ -37,8 +37,11 @@ abstract class CompositePermission implements PermissionInterface, CacheablePerm
     }
 
     /**
-     * Runs the checks without container. The route loader calls check()
-     * instead, so the permission classes are created through the container.
+     * Runs the checks without container: the class names they contain are
+     * instantiated without arguments, so a class that needs dependencies
+     * throws an ApiException. The route loader calls check() instead, so the
+     * permission classes are created through the container. When you call
+     * this method yourself, pass permission objects that are already built.
      *
      * @inheritDoc
      */
